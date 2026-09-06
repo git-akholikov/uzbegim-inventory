@@ -4,38 +4,49 @@ This file is the crash-recovery record. Update, commit, and push it continuously
 
 ## Task
 
-- GitHub issue: None (local dry-run test — repo has no GitHub remote yet)
+- GitHub issue: None yet (repo not published to GitHub yet)
 - Branch: `main`
 - Pull request: None
-- Current assistant: Claude (dry-run test checkpoint)
+- Current assistant: Claude
 - Last checkpoint date and time: 2026-09-06
 - Checkpoint commit: this commit
 
 ## Requested outcome
 
-Dry-run test: verify that a fresh AI assistant, with no memory of this conversation, can read this repo's recovery files alone and correctly determine what to do next — before trusting the system with real work.
+Owner supplied a separate "deployment package" zip (Code.gs, appsscript.json, standalone.html, plus a second, non-GitHub handoff doc set). Pull in only what's actually new/needed for Google Apps Script deployment, skip the redundant duplicate docs, and get the app ready to actually deploy.
 
 ## Completed and pushed
 
-- Confirmed this repository has no commits and no GitHub remote yet (local only, on this device).
-- Wrote this test checkpoint to validate the crash-recovery mechanism.
+- Verified `standalone.html`/`Index.html` from the supplied package are byte-identical (same md5) to this repo's existing `index.html` — no new application code arrived.
+- Added `apps-script/Code.gs` — the Apps Script web-app entry point (`doGet`). Currently just serves the HTML; does not yet read/write Google Sheets.
+- Added `apps-script/appsscript.json` — minimal Apps Script manifest.
+- Added `apps-script/DEPLOYMENT.md` — manual step-by-step for creating the Apps Script project and deploying it as a web app.
+- Deliberately did NOT bring in the package's README.md/PROJECT-BRIEF.md/HANDOFF.md/SEND-THIS-TO-CLAUDE.md/CLAUDE.md — those set up a second, non-GitHub handoff/checkpoint system that duplicates and conflicts with this repo's own COLLABORATION.md/CURRENT_WORK.md/TASKS.md system. This repo's system stays the single source of truth.
 
 ## In progress
 
-Nothing. This is a deliberate stop-point for the handoff test.
+Nothing committed yet beyond the files above. Waiting on the owner for the Google Sheets schema decisions below before writing any Sheets read/write code.
 
 ## Exact next action
 
-Open TASKS.md and change the line `- [ ] Test one handoff between two assistants` to `- [x] Test one handoff between two assistants`. Then run `git add -A && git commit -m "test: handoff dry run verified"`. Do not change any other file.
+Do not write Google Sheets integration code yet. First get answers from the owner to the open decisions below, record them in `PROJECT_STATE.md`, then implement `apps-script/Code.gs` functions to read/write Products and Movements sheets, matching the ledger approach (Products / Movements / Stock tabs, stock calculated from movements, min-quantity reorder warnings) already agreed with the owner.
 
 ## Files changed in this task
 
-- CURRENT_WORK.md (this checkpoint)
+- `apps-script/Code.gs` (new)
+- `apps-script/appsscript.json` (new)
+- `apps-script/DEPLOYMENT.md` (new)
+- `CURRENT_WORK.md` (this checkpoint)
 
 ## Verification completed
 
-- None yet — this is what the next assistant should produce.
+- md5 comparison confirmed no drift between the supplied package's HTML and this repo's `index.html`.
 
 ## Errors, risks, or decisions needed
 
-- Repository is not yet published to GitHub, so this test only exercises the file-based recovery mechanism, not real GitHub issues/PRs. A full test with real issues should happen after publishing.
+- Names of the two Google Sheets files the owner wants staff to be able to open directly in Drive.
+- Required tabs/columns in each (Products, Movements, Stock — confirm exact columns).
+- Which real Google accounts are manager vs. worker.
+- Whether access should be restricted to a Workspace domain or to specific accounts.
+- Backup frequency/retention for the sheets.
+- The owner's earlier note that "workers should be able to see prices" conflicts with `PROJECT_STATE.md`'s locked-in decision to exclude pricing from v1 — confirm whether pricing stays out of v1 or was meant to be added back before deployment.
