@@ -26,7 +26,7 @@ Use a GitHub issue for each task. Add its issue number beside the item when work
 
 ## Google Apps Script migration
 
-- [ ] Define Google Sheets tables and columns
+- [x] Define Google Sheets tables and columns (see apps-script/SHEETS-SCHEMA.md, workbook delivered to owner)
 - [ ] Split `index.html` into Apps Script HTML, CSS, JavaScript, and server files
 - [ ] Add Google account role lookup
 - [ ] Read and write products through Google Sheets
