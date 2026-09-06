@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Uzbegim Warehouse</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="phone">
+  <div class="header">
+    <button class="hback" id="back">&#8592;</button>
+    <div class="htitle" id="title">Uzbegim Inventory</div>
+    <div class="langs"><button class="lang on">EN</button><button class="lang">RU</button><button class="lang">UZ</button></div>
+  </div>
+  <div class="body" id="body">
+
+    <div class="screen on" id="s-menu">
+      <div class="hero">
+        <div class="hero-greet" id="hi-greet">GOOD MORNING</div>
+        <div class="hero-person"><div class="hero-name">Abdu</div><span class="role-badge" id="hi-role">Manager</span></div>
+        <div class="hero-date" id="hi-date"></div>
+        <div class="hero-stats">
+          <div class="hs"><div class="hs-v" id="k2">0</div><div class="hs-l">BOXES ON HAND</div></div>
+          <div class="hs"><div class="hs-v" id="k1">0</div><div class="hs-l">ACTIVE SKUS</div></div>
+          <div class="hs"><div class="hs-v warn" id="k3">0</div><div class="hs-l">NEED ACTION</div></div>
+        </div>
+      </div>
+
+      <div class="alertstrip" id="hi-alert" onclick="renderAttn();go('attn')">
+        <div class="ic" id="hi-alert-ic">&#9888;</div>
+        <div class="tx" id="hi-alert-tx">Checking stock levels</div>
+        <div class="ar">&rsaquo;</div>
+      </div>
+
+      <div class="grouplab">Daily work</div>
+      <div class="menu">
+        <button class="mbtn" data-go="move">
+          <div class="ico i-rust">+</div>
+          <div class="ttl">New movement</div>
+          <div class="sub">Send stock out</div>
+          <div class="dot" id="hi-basket" style="display:none">0</div>
+        </button>
+        <button class="mbtn" data-go="receive">
+          <div class="ico i-green">&#8595;</div>
+          <div class="ttl">Receive</div>
+          <div class="sub">Book in delivery</div>
+        </button>
+        <button class="mbtn" data-go="stock">
+          <div class="ico i-teal">&#9635;</div>
+          <div class="ttl">Stock</div>
+          <div class="sub">What we hold now</div>
+        </button>
+        <button class="mbtn" data-go="attn">
+          <div class="ico i-rust">!</div>
+          <div class="ttl">Attention</div>
+          <div class="sub">Below minimum</div>
+          <div class="dot" id="hi-attn">0</div>
+        </button>
+      </div>
+
+      <div class="grouplab">Records</div>
+      <div class="menu">
+        <button class="mbtn wide" data-go="hist">
+          <div class="ico i-blue">&#8801;</div>
+          <div style="flex:1">
+            <div class="ttl">Movement history</div>
+            <div class="sub" id="hi-hist">Every stock movement</div>
+          </div>
+          <div style="color:#b3afa7;font-size:16px;font-weight:800">&rsaquo;</div>
+        </button>
+        <button class="mbtn wide" data-go="stats">
+          <div class="ico i-teal">&#8599;</div>
+          <div style="flex:1">
+            <div class="ttl">Inventory report</div>
+            <div class="sub">Stock health and movement</div>
+          </div>
+          <div style="color:#b3afa7;font-size:16px;font-weight:800">&rsaquo;</div>
+        </button>
+      </div>
+
+      <div class="grouplab" id="mgr-lab">Manager</div>
+      <div class="menu" id="mgr-menu">
+        <button class="mbtn" data-go="adjust">
+          <div class="ico i-blue">&#10003;</div>
+          <div class="ttl">Stock count</div>
+          <div class="sub">Correct after counting</div>
+        </button>
+        <button class="mbtn" data-go="products">
+          <div class="ico i-teal">&#9638;</div>
+          <div class="ttl">Products</div>
+          <div class="sub" id="hi-pd">Edit, add, minimums</div>
+        </button>
+        <button class="mbtn" data-go="custs">
+          <div class="ico i-green">&#9673;</div>
+          <div class="ttl">Customers &amp; suppliers</div>
+          <div class="sub" id="hi-cu">Manage both lists</div>
+        </button>
+        <button class="mbtn" data-go="staff">
+          <div class="ico i-blue">&#9678;</div>
+          <div class="ttl">Staff</div>
+          <div class="sub" id="hi-st">Who can use the app</div>
+        </button>
+        <button class="mbtn" data-go="learn">
+          <div class="ico i-sand">&#9638;</div>
+          <div class="ttl">Barcodes</div>
+          <div class="sub" id="hi-bc">Attach codes</div>
+        </button>
+        <button class="mbtn wide" data-go="settings">
+          <div class="ico i-sand">&#8984;</div>
+          <div style="flex:1">
+            <div class="ttl">Settings</div>
+            <div class="sub">Warehouse details and alerts</div>
+          </div>
+          <div style="color:#b3afa7;font-size:16px;font-weight:800">&rsaquo;</div>
+        </button>
+      </div>
+
+      <div class="menufoot">Uzbegim Food Market &middot; Inventory v1</div>
+    </div>
+
+    <div class="screen" id="s-stock">
+      <div class="sticky">
+        <input class="inp" id="stk-q" placeholder="Search name, SKU or brand">
+        <div class="frow"><select id="stk-cat"></select><select id="stk-brand"></select><select id="stk-status"></select></div>
+        <div class="catbar" id="stk-cats"></div>
+        <div class="fcount" id="stk-count"></div>
+      </div>
+      <div class="list" id="stk-list"></div>
+    </div>
+
+    <div class="screen" id="s-move">
+      <div class="sticky">
+        <div class="searchrow"><input class="inp" id="mv-q" placeholder="Search name, SKU or brand"><button class="scanbtn" onclick="openScan('mv')">Scan</button></div>
+        <div class="frow"><select id="mv-cat"></select><select id="mv-brand"></select><select id="mv-status"></select></div>
+        <div class="catbar" id="mv-cats"></div>
+        <div class="fcount" id="mv-count"></div>
+      </div>
+      <div class="list" id="mv-list"></div>
+    </div>
+
+    <div class="screen" id="s-review">
+      <div class="sechead">Order lines</div>
+      <div class="list" id="rv-list"></div>
+      <div class="total" id="rv-total">0 boxes</div>
+      <div class="fg"><label class="lab">Customer / destination</label><select class="ctrl" id="rv-cust"></select></div>
+      <div class="fg"><label class="lab">Notes</label><input class="ctrl" id="rv-notes" placeholder="Optional"></div>
+      <button class="btn" id="rv-go">Confirm order</button>
+    </div>
+
+    <div class="screen" id="s-conf">
+      <div class="conf">
+        <div style="font-size:46px;color:#26603a;margin-bottom:10px">&#10003;</div>
+        <div style="font-size:15px;font-weight:800;margin-bottom:6px">Movement confirmed</div>
+        <div style="font-size:12px;color:#6f6b64;font-weight:600;margin-bottom:4px" id="cf-id"></div>
+        <div style="font-size:13px;color:#0F5C5C;font-weight:800;margin-bottom:20px" id="cf-sum"></div>
+        <div class="mailbox" id="cf-mail"></div>
+        <div class="actions" id="cf-acts" style="display:none" aria-hidden="true">
+          <button class="act main" id="cf-open">Open</button>
+          <button class="act" id="cf-save">Download</button>
+          <button class="act" id="cf-share">Share</button>
+        </div>
+        <button class="btn ghost" id="cf-back">Back to menu</button>
+      </div>
+    </div>
+
+    <div class="screen" id="s-receive">
+      <div class="sticky">
+        <div class="tabs">
+          <button class="tab on" data-rt="existing">Existing products</button>
+          <button class="tab" data-rt="new">New product</button>
+        </div>
+        <div id="rc-existing">
+          <div class="fg" style="margin-bottom:7px"><label class="lab">Supplier</label><select class="ctrl" id="rc-sup"></select></div>
+          <div class="fg" style="margin-bottom:7px"><label class="lab">Delivery note number</label><input class="ctrl" id="rc-ref" placeholder="Optional"></div>
+          <div class="searchrow"><input class="inp" id="rc-q" placeholder="Search name, SKU or brand"><button class="scanbtn" onclick="openScan('rc')">Scan</button></div>
+          <div class="frow"><select id="rc-cat"></select><select id="rc-brand"></select></div>
+          <div class="fcount" id="rc-count"></div>
+        </div>
+      </div>
+
+      <div class="list" id="rc-list"></div>
+
+      <div id="rc-new" style="display:none">
+        <div class="fg"><label class="lab">Category</label>
+          <div class="searchrow"><select class="ctrl" id="np-cat"></select><button class="scanbtn" onclick="addCategory()">+ New</button></div></div>
+        <div class="fg"><label class="lab">Brand</label>
+          <div class="searchrow"><select class="ctrl" id="np-brand"></select><button class="scanbtn" onclick="addBrand()">+ New</button></div></div>
+        <div class="fg"><label class="lab">Product name</label><input class="ctrl" id="np-name" placeholder="e.g. Moxito"></div>
+        <div class="fg"><label class="lab">Flavour or size <span style="color:#8a8780;font-weight:600">(optional)</span></label><input class="ctrl" id="np-flavor" placeholder="e.g. Lime, 1L, 5kg"></div>
+        <div class="frow" style="margin-bottom:10px">
+          <div style="flex:1"><label class="lab">Unit</label>
+            <select class="ctrl" id="np-unit"><option>can</option><option>bottle</option><option>pack</option><option>bag</option><option>jar</option><option>piece</option></select></div>
+          <div style="flex:1"><label class="lab">Units per box</label><input class="ctrl" id="np-upb" type="number" inputmode="numeric" placeholder="24"></div>
+        </div>
+        <div class="frow" style="margin-bottom:10px;display:none" aria-hidden="true">
+          <div style="flex:1"><label class="lab">Cost per box</label><input class="ctrl" id="np-cost" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+          <div style="flex:1"><label class="lab">Selling price</label><input class="ctrl" id="np-price" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+        </div>
+        <div class="frow" style="margin-bottom:10px">
+          <div style="flex:1"><label class="lab">Minimum boxes</label><input class="ctrl" id="np-min" type="number" inputmode="numeric" placeholder="0"></div>
+          <div style="flex:1"><label class="lab">Boxes arriving</label><input class="ctrl" id="np-boxes" type="number" inputmode="numeric" placeholder="0"></div>
+        </div>
+        <div class="fcount" id="np-sku" style="margin-bottom:10px">SKU will be generated automatically</div>
+        <button class="btn" id="np-add">Create product and add to delivery</button>
+      </div>
+    </div>
+
+    <div class="screen" id="s-rreview">
+      <div class="sechead">Delivery from <span id="rv2-sup"></span></div>
+      <div class="list" id="rv2-list"></div>
+      <div class="total" id="rv2-total">0 boxes</div>
+      <div class="fg"><label class="lab">Delivery note number</label><input class="ctrl" id="rv2-ref" placeholder="Optional"></div>
+      <div class="fg"><label class="lab">Notes</label><input class="ctrl" id="rv2-notes" placeholder="Optional"></div>
+      <button class="btn" id="rv2-go">Confirm delivery</button>
+    </div>
+
+    <div class="screen" id="s-attn">
+      <div class="sechead">At or below minimum</div>
+      <div class="list" id="at-list"></div>
+    </div>
+
+    <div class="screen" id="s-hist">
+      <div class="sticky">
+        <input class="inp" id="hs-q" placeholder="Search movement or destination">
+        <div class="frow"><select id="hs-type"></select><select id="hs-cust"></select></div>
+        <div class="frow"><input type="date" id="hs-from"><input type="date" id="hs-to"></div>
+        <div class="frow"><select id="hs-product"></select><select id="hs-brand"></select></div>
+        <select id="hs-view" style="display:none" aria-hidden="true"><option value="doc">List every movement</option></select>
+        <div class="fcount" id="hs-count"></div>
+      </div>
+      <div class="list" id="hs-list"></div>
+    </div>
+
+    <div class="screen" id="s-scan">
+      <div class="scanmsg sc-ok" id="sc-msg">Point the camera at the barcode on the box</div>
+      <div id="reader"></div>
+      <div class="fcount" id="sc-hint">Not every product has a code yet. Use Barcodes on the menu to add the missing ones.</div>
+      <button class="btn ghost" id="sc-stop">Stop camera</button>
+    </div>
+
+    <div class="screen" id="s-learn">
+      <div class="sechead">Barcode capture</div>
+      <div class="scanmsg sc-ok" id="ln-msg">Scan a box, then pick the product it belongs to</div>
+      <div id="reader2"></div>
+      <div class="fcount" id="ln-count"></div>
+      <input class="inp" id="ln-q" placeholder="Search product to attach code">
+      <div class="frow"><select id="ln-filter"><option value="missing">Only products without a code</option><option value="">All products</option></select></div>
+      <div class="list" id="ln-list"></div>
+    </div>
+
+    <div class="screen" id="s-adjust">
+      <div class="sticky">
+        <div class="scanmsg sc-ok" style="margin-bottom:8px">Count the shelf, type what you actually found. The difference is recorded as an adjustment.</div>
+        <input class="inp" id="aj-q" placeholder="Search name, SKU or brand">
+        <div class="frow"><select id="aj-cat"></select><select id="aj-brand"></select></div>
+        <div class="fcount" id="aj-count"></div>
+      </div>
+      <div class="list" id="aj-list"></div>
+    </div>
+
+    <div class="screen" id="s-prices">
+      <div class="sticky">
+        <input class="inp" id="pr-q" placeholder="Search name, SKU or brand">
+        <div class="frow"><select id="pr-cat"></select><select id="pr-brand"></select></div>
+        <div class="frow"><select id="pr-cust"></select><select id="pr-only"></select></div>
+        <div class="tabs" style="margin-top:8px;margin-bottom:0">
+          <button class="tab on" data-pm="prod">By product</button>
+          <button class="tab" data-pm="brand">By brand</button>
+        </div>
+        <div class="fcount" id="pr-count"></div>
+      </div>
+      <div class="list" id="pr-list"></div>
+    </div>
+
+    <div class="screen" id="s-custs">
+      <div class="tabs">
+        <button class="tab on" data-ct="list">Customers</button>
+        <button class="tab" data-ct="sup">Suppliers</button>
+      </div>
+
+      <div id="cu-pane">
+        <input class="inp" id="cu-q" placeholder="Search customers" style="margin-bottom:8px">
+        <div class="list" id="cu-list"></div>
+        <button class="btn ghost" id="cu-new" style="margin-top:10px">+ Add a customer</button>
+      </div>
+
+      <div id="sup-pane" style="display:none">
+        <input class="inp" id="sp-q" placeholder="Search suppliers" style="margin-bottom:8px">
+        <div class="list" id="sup-list"></div>
+        <button class="btn ghost" id="sp-new" style="margin-top:10px">+ Add a supplier</button>
+      </div>
+    </div>
+
+    <div class="screen" id="s-custedit">
+      <div class="sechead" id="ce-head">New customer</div>
+      <div class="fg"><label class="lab">Business name <span class="req">required</span></label>
+        <input class="ctrl" id="ce-name" placeholder="e.g. Samarkand Grill"></div>
+      <div class="fg"><label class="lab">Destination type</label>
+        <select class="ctrl" id="ce-kind">
+          <option value="invoice">Customer</option>
+          <option value="transfer">My store, cafe, or other location</option>
+        </select>
+        <div class="hint">This separates customer stock-out from internal transfers in the inventory report.</div></div>
+      <div class="fg"><label class="lab">Contact person</label><input class="ctrl" id="ce-contact" placeholder="Who you speak to"></div>
+      <div class="fg"><label class="lab">Phone</label><input class="ctrl" id="ce-phone" type="tel" placeholder="(513) 555-0000"></div>
+      <div class="fg"><label class="lab">Email</label><input class="ctrl" id="ce-email" type="email" placeholder="Optional"></div>
+      <div class="fg"><label class="lab">Street address</label><input class="ctrl" id="ce-addr" placeholder="Street"></div>
+      <div class="frow" style="margin-bottom:11px">
+        <div style="flex:2"><label class="lab">City</label><input class="ctrl" id="ce-city"></div>
+        <div style="flex:1"><label class="lab">State</label><input class="ctrl" id="ce-state" placeholder="OH"></div>
+        <div style="flex:1"><label class="lab">ZIP</label><input class="ctrl" id="ce-zip"></div>
+      </div>
+      <div class="fg" style="display:none" aria-hidden="true"><label class="lab">Payment terms</label>
+        <select class="ctrl" id="ce-terms">
+          <option value="">Not set</option><option>Cash on delivery</option>
+          <option>Net 7</option><option>Net 14</option><option>Net 30</option>
+        </select></div>
+      <div class="fg"><label class="lab">Notes</label><input class="ctrl" id="ce-notes" placeholder="Delivery days, gate code, anything useful"></div>
+      <button class="btn" id="ce-save">Save customer</button>
+      <button class="btn ghost" id="ce-cancel">Cancel</button>
+    </div>
+
+    <div class="screen" id="s-supedit">
+      <div class="sechead" id="se-head">New supplier</div>
+      <div class="fg"><label class="lab">Company name <span class="req">required</span></label>
+        <input class="ctrl" id="se-name" placeholder="e.g. ARASHAN"></div>
+      <div class="fg"><label class="lab">Contact person</label><input class="ctrl" id="se-contact"></div>
+      <div class="fg"><label class="lab">Phone</label><input class="ctrl" id="se-phone" type="tel"></div>
+      <div class="fg"><label class="lab">Email</label><input class="ctrl" id="se-email" type="email"></div>
+      <div class="fg"><label class="lab">Street address</label><input class="ctrl" id="se-addr"></div>
+      <div class="frow" style="margin-bottom:11px">
+        <div style="flex:2"><label class="lab">City</label><input class="ctrl" id="se-city"></div>
+        <div style="flex:1"><label class="lab">State</label><input class="ctrl" id="se-state"></div>
+        <div style="flex:1"><label class="lab">ZIP</label><input class="ctrl" id="se-zip"></div>
+      </div>
+      <div class="fg" style="display:none" aria-hidden="true"><label class="lab">Payment terms</label>
+        <select class="ctrl" id="se-terms">
+          <option value="">Not set</option><option>Cash on delivery</option>
+          <option>Net 7</option><option>Net 14</option><option>Net 30</option>
+        </select></div>
+      <div class="fg"><label class="lab">Notes</label><input class="ctrl" id="se-notes" placeholder="Order cut-off, minimum order, delivery days"></div>
+      <button class="btn" id="se-save">Save supplier</button>
+      <button class="btn ghost" id="se-cancel">Cancel</button>
+    </div>
+
+    <div class="screen" id="s-products">
+      <div class="sticky">
+        <input class="inp" id="pd-q" placeholder="Search name, SKU or brand">
+        <div class="frow"><select id="pd-cat"></select><select id="pd-brand"></select><select id="pd-only"></select></div>
+        <div class="fcount" id="pd-count"></div>
+      </div>
+      <div class="list" id="pd-list"></div>
+      <button class="btn ghost" id="pd-new" style="margin-top:10px">+ Add a product</button>
+    </div>
+
+    <div class="screen" id="s-prodedit">
+      <div class="sechead" id="pe-head">New product</div>
+      <div class="fg"><label class="lab">Category <span class="req">required</span></label>
+        <div class="searchrow"><select class="ctrl" id="pe-cat"></select><button class="scanbtn" onclick="addCatTo('pe-cat')">+ New</button></div></div>
+      <div class="fg"><label class="lab">Brand <span class="req">required</span></label>
+        <div class="searchrow"><select class="ctrl" id="pe-brand"></select><button class="scanbtn" onclick="addBrandTo('pe-brand')">+ New</button></div></div>
+      <div class="fg"><label class="lab">Product name <span class="req">required</span></label><input class="ctrl" id="pe-name" placeholder="e.g. Moxito"></div>
+      <div class="fg"><label class="lab">Flavour or size</label><input class="ctrl" id="pe-flavor" placeholder="e.g. Lime, 1L, 5kg"></div>
+      <div class="frow" style="margin-bottom:11px">
+        <div style="flex:1"><label class="lab">Unit</label>
+          <select class="ctrl" id="pe-unit"><option>can</option><option>bottle</option><option>pack</option><option>bag</option><option>jar</option><option>piece</option><option>kg</option></select></div>
+        <div style="flex:1"><label class="lab">Units per box</label><input class="ctrl" id="pe-upb" type="number" inputmode="numeric" placeholder="24"></div>
+      </div>
+      <div class="frow" style="margin-bottom:11px;display:none" aria-hidden="true">
+        <div style="flex:1"><label class="lab">Cost per box</label><input class="ctrl" id="pe-cost" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+        <div style="flex:1"><label class="lab">Selling price</label><input class="ctrl" id="pe-price" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+      </div>
+      <div class="frow" style="margin-bottom:11px">
+        <div style="flex:1"><label class="lab">Minimum boxes</label><input class="ctrl" id="pe-min" type="number" inputmode="numeric" placeholder="0"></div>
+        <div style="flex:1"><label class="lab">Barcode</label><input class="ctrl" id="pe-barcode" placeholder="Optional"></div>
+      </div>
+      <div class="fg"><label class="lab">Supplier</label><select class="ctrl" id="pe-sup"></select></div>
+      <div class="fcount" id="pe-sku" style="margin-bottom:11px"></div>
+      <button class="btn" id="pe-save">Save product</button>
+      <button class="btn ghost" id="pe-cancel">Cancel</button>
+    </div>
+
+    <div class="screen" id="s-staff">
+      <div class="list" id="st-list2"></div>
+      <div class="sechead">Add a person</div>
+      <div class="fg"><label class="lab">Name <span class="req">required</span></label><input class="ctrl" id="sf-name" placeholder="e.g. Nodir"></div>
+      <div class="fg"><label class="lab">Google account email</label><input class="ctrl" id="sf-email" type="email" placeholder="name@gmail.com">
+        <div class="hint">This is how the app knows who is signed in. Without it they are treated as a worker.</div></div>
+      <div class="fg"><label class="lab">Role</label>
+        <select class="ctrl" id="sf-role">
+          <option value="worker">Worker &mdash; movements, receiving, stock</option>
+          <option value="manager">Manager &mdash; all inventory controls</option>
+        </select></div>
+      <button class="btn" id="sf-add">Add person</button>
+    </div>
+
+    <div class="screen" id="s-settings">
+      <div class="sechead">Warehouse details</div>
+      <div class="fg"><label class="lab">Business name</label><input class="ctrl" id="se2-name"></div>
+      <div class="fg"><label class="lab">Line under the name</label><input class="ctrl" id="se2-line1"></div>
+      <div class="fg"><label class="lab">Email or phone</label><input class="ctrl" id="se2-line2"></div>
+      <div class="fg" style="display:none" aria-hidden="true"><label class="lab">Footer text</label><input class="ctrl" id="se2-foot"></div>
+
+      <div class="sechead">Stock alerts</div>
+      <div class="fg"><label class="lab">Warn as LOW when stock is within</label>
+        <select class="ctrl" id="se2-low">
+          <option value="1.25">25% above the minimum</option>
+          <option value="1.5" selected>50% above the minimum</option>
+          <option value="2">double the minimum</option>
+        </select></div>
+      <div class="fg"><label class="lab">Suggested order tops up to</label>
+        <select class="ctrl" id="se2-target">
+          <option value="1.5">1.5&times; the minimum</option>
+          <option value="2" selected>2&times; the minimum</option>
+          <option value="3">3&times; the minimum</option>
+        </select></div>
+
+      <div class="sechead">Email</div>
+      <div class="fg"><label class="lab">Owner email</label><input class="ctrl" id="se2-email" type="email"></div>
+      <div class="fg"><label class="lab">Send an email when</label>
+        <select class="ctrl" id="se2-when">
+          <option value="invoice">Only stock-out movements</option>
+          <option value="all">Every stock movement</option>
+          <option value="none">Never</option>
+        </select></div>
+
+      <button class="btn" id="se2-save">Save settings</button>
+    </div>
+
+    <div class="screen" id="s-detail"><div id="dt-body"></div></div>
+
+    <div class="screen" id="s-stats">
+      <div class="periodbar">
+        <div class="pb-lab">REPORTING PERIOD</div>
+        <div class="pb-val" id="pb-range">&mdash;</div>
+        <div class="pb-sub" id="pb-days">&mdash;</div>
+        <div class="chips" id="pb-chips">
+          <button class="chip" data-p="7">7 days</button>
+          <button class="chip on" data-p="30">30 days</button>
+        </div>
+        <div class="dates"><label>FROM<input type="date" id="st-from" aria-label="From date"></label><label>TO<input type="date" id="st-to" aria-label="To date"></label></div>
+      </div>
+      <div id="st-list"></div>
+    </div>
+
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div class="dock" id="cdock">
+    <div class="bb-top"><span id="cb-n">Nothing counted yet</span></div>
+    <button class="btn" id="cb-go" disabled>Post adjustments</button>
+  </div>
+  <div class="dock" id="rdock">
+    <div class="bb-top"><span id="rb-n">Nothing added</span><span class="bb-badge" id="rb-b">0 boxes</span></div>
+    <button class="btn" id="rb-go" disabled>Review delivery</button>
+  </div>
+  <div class="dock" id="dock">
+    <div class="bb-top"><span id="bb-n">Basket empty</span><span class="bb-badge" id="bb-b">0 boxes</span></div>
+    <button class="btn" id="bb-go" disabled>Review basket</button>
+  </div>
+</div>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

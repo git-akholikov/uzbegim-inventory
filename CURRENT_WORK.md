@@ -13,33 +13,39 @@ This file is the crash-recovery record. Update, commit, and push it continuously
 
 ## Requested outcome
 
-Owner confirmed v1 is inventory-only with pricing fully excluded, but wants the schema built so a future version can add per-customer pricing without reworking the core. Owner asked for the actual Google Sheets database file (not just a schema doc) to upload to Drive and deploy later; provided two of his own Gmail accounts to test manager/worker roles, and said access is needed for at most 2-3 managers and 2-3 workers.
+Owner uploaded their own `Warehouse_Inventory_v16_1.xlsx` (a mature, pre-existing Excel inventory system with 91 real products) to answer "where is my product list", and asked to pull whatever's needed into the Sheets workbook, strip pricing out of the actual app entirely, and send back a runnable HTML he can test on phone and web.
 
 ## Completed and pushed
 
-- Confirmed v1 scope (no pricing) in `PROJECT_STATE.md`, with explicit "Future direction" guidance: keep Movements price-free, add pricing later as a separate Customer x Product x Rate lookup, keep stable Product ID / Customer ID keys now.
-- Defined the full Sheets schema in `apps-script/SHEETS-SCHEMA.md`: Staff, Products, Customers, Suppliers, Movements, Stock tabs, with columns.
-- Built and delivered `uzbegim-warehouse-inventory.xlsx` to the owner (openpyxl, recalculated with LibreOffice, 1600 formulas, 0 errors): all 6 tabs plus a ReadMe tab, data-validation dropdowns (Type, Role, Active, Product/Customer/Supplier/Staff lookups), Customers tab pre-filled with the 7 known distribution destinations, Staff tab pre-filled with the owner's two test accounts (abduraufkholikov@gmail.com = Manager, abduraufkholikov0@gmail.com = Worker), Stock tab computed live via SUMIFS from Movements. Also committed into this repo at `apps-script/uzbegim-warehouse-inventory.xlsx` so it stays version-controlled alongside the schema doc.
-- Checked off "Define Google Sheets tables and columns" in `TASKS.md`.
+- Discovered `index.html` already contained the owner's real 91-product catalog and real movement history (with cost/price fields) baked in from an earlier version — not placeholder sample data as the docs previously implied.
+- Audited every reachable screen for live pricing: Dashboard, Stock, Move, Receive, New/Edit Product, Customers/Suppliers, History (list + detail), and Stats were already price-free (a previous session had already hidden the New/Edit Product cost/price fields via `display:none` and disconnected the "Prices and cost" screen from navigation, and new movements already hardcode price/cost to 0). The two remaining live pricing surfaces were `buildPDF()`'s PRICE/BOX and TOTAL columns (would show real $ for old historical records) and `drawGrouped()`'s revenue-based sort/bar-sizing in grouped History views.
+- Added `SHOW_PRICING = false` as a single flag (top of `source/data.js`) and gated both of those surfaces on it, without deleting any pricing data or logic — flipping it to `true` later restores the fuller version, per the owner's explicit ask to keep that easy.
+- Verified in a headless browser: clicked through every screen, confirmed zero "$" text visible anywhere and zero console/page errors introduced (only the two external CDN library loads fail, which is this sandbox's network, not the edit).
+- Split the app into `source/markup.html`, `source/styles.css`, `source/app.js`, `source/data.js` (data = the product/history/pricing data blob, app.js = all logic) and kept `index.html` as the single-file bundled version for actually opening/testing.
+- Regenerated `apps-script/uzbegim-warehouse-inventory.xlsx`: Products tab now has all 91 real SKUs (brand, flavor, unit, category, units per box, min boxes, supplier where known), Suppliers has the 4 real suppliers found in the data, Movements has one opening-balance row per product with today's real box count plus a few labeled example rows. Recalculated clean (0 errors, 1600 formulas).
+- Delivered `index.html`, the 4 `source/` files, and the updated workbook to the owner, and published a live phone/web preview as an Artifact (barcode scanning won't load there — unpkg is blocked by the preview's sandbox — but everything else works; it works fully when the owner opens the real `index.html`).
+- Updated `PROJECT_STATE.md` and `apps-script/SHEETS-SCHEMA.md` to describe the flag, the real catalog, and the future-pricing pattern.
 
 ## In progress
 
-Nothing in progress. Waiting on the owner to actually upload the workbook to Google Drive/Sheets (their action, not something this session can do) before Sheets-connected Apps Script code can be written and tested against real Sheet IDs.
+Nothing in progress. Waiting on the owner to test the app on phone/web and report back, and to upload the workbook to Google Drive when ready.
 
 ## Exact next action
 
-Once the owner has uploaded `uzbegim-warehouse-inventory.xlsx` to Google Drive and converted it to Google Sheets, get the resulting Spreadsheet ID from them and start implementing `apps-script/Code.gs` functions that read/write the Products and Movements tabs per `apps-script/SHEETS-SCHEMA.md`, enforcing roles server-side via the Staff tab (do not trust client-side role hiding alone).
+Once the owner confirms the app looks right and has uploaded the workbook to Google Drive/Sheets, get the resulting Spreadsheet ID and start implementing `apps-script/Code.gs` functions that read/write the Products and Movements tabs per `apps-script/SHEETS-SCHEMA.md`, enforcing roles server-side via the Staff tab.
 
 ## Files changed in this task
 
-- `PROJECT_STATE.md`, `apps-script/SHEETS-SCHEMA.md` (new), `TASKS.md`, `CURRENT_WORK.md`
+- `index.html`, `source/markup.html`, `source/styles.css`, `source/app.js`, `source/data.js` (new split)
+- `apps-script/uzbegim-warehouse-inventory.xlsx` (real catalog + opening balances)
+- `PROJECT_STATE.md`, `apps-script/SHEETS-SCHEMA.md`, `CURRENT_WORK.md`
 
 ## Verification completed
 
-- Workbook recalculated with LibreOffice: `status: success`, `total_errors: 0`, `total_formulas: 1600`.
-- Spot-checked the Stock tab's computed value for the example product (P001) against the example Movements rows by hand: 40 received − 6 stock-out − 10 transfer − 1 count adjustment = 23, matches the sheet's computed value.
+- Headless-browser click-through of every screen: 0 visible "$" anywhere, `SHOW_PRICING` reads `false`, `node --check` passed on the edited script, 0 new console/page errors.
+- Workbook recalculated with LibreOffice: 0 errors, 1600 formulas; spot-checked BEV-MOX-001's computed stock (opening 36 + example movements = 39, correctly flagged REORDER against its min of 40).
 
 ## Errors, risks, or decisions needed
 
-- Test accounts are both the owner's own Gmail addresses, not yet real staff accounts — real staff need to replace/join them on the Staff tab before real deployment.
-- The two-Gmail-account test will validate role-based UI differences but the app is still sample-data-in-browser until Apps Script is actually wired to the Sheet — deploying before that step would not persist anything.
+- The app's historical `HISTORY` data still contains real-looking price/cost figures internally (never deleted, per the "keep it easy to bring back" instruction) — anyone reading `source/data.js` directly will see them even though the UI never displays them. Not a UI bug, just worth knowing before sharing that file outside the owner.
+- Barcode scanning needs a real browser with internet access (unpkg is blocked in the sandboxed Artifact preview) — not an issue on the owner's own phone/computer.
