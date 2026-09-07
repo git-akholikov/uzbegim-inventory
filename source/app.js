@@ -250,11 +250,40 @@ function filterProducts(p){
     if(c&&x.cat!==c)return false;if(b&&x.brand!==b)return false;if(s&&statusOf(x)!==s)return false;return true;});
 }
 
+/* ════════════ Days of supply: adaptive-window outbound rate ════════════
+   A slow mover (once a month) and a fast mover (daily) can't share a single
+   fixed lookback - a 14-day window makes a slow mover look almost dead.
+   Start at 14 days; if there isn't enough outbound history to trust that
+   window, widen it (30, then 90 days) until there is. Only a product with
+   no outbound history at all falls back to "no recent movement". */
+function outboundInWindow(sku,days){
+  var since=shift(days-1),qty=0,moves=0;
+  HISTORY.forEach(function(h){
+    if(h.type==='receipt'||h.date<since)return;
+    h.lines.forEach(function(l){ if(l.sku===sku){ qty+=l.boxes; moves++; } });
+  });
+  return {qty:qty,moves:moves};
+}
+function daysOfSupply(p){
+  var windows=[14,30,90];
+  for(var i=0;i<windows.length;i++){
+    var w=windows[i],r=outboundInWindow(p.sku,w);
+    if(r.qty>0&&(r.moves>=2||i===windows.length-1))return Math.min(999,p.boxes/(r.qty/w));
+  }
+  return null;
+}
+function dosLabel(p){
+  var d=daysOfSupply(p);
+  if(d===null)return 'No recent movement';
+  if(d>180)return '180+ days left';
+  return '~'+Math.round(d)+' day'+(Math.round(d)===1?'':'s')+' left';
+}
+
 function renderStock(){
   var r=filterProducts('stk');
   document.getElementById('stk-count').textContent=r.length+' of '+PRODUCTS.length+' products';
   document.getElementById('stk-list').innerHTML=r.length?r.map(function(p){var s=statusOf(p);
-    return '<div class="card'+(s==='OUT'?' dead':(s==='ORDER'?' hot':''))+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div><div class="c-meta">'+p.sku+' &middot; '+p.cat+' &middot; '+p.upb+' '+p.unit+'/box</div><div style="margin-top:6px"><span class="pill s-'+s+'">'+label(s)+'</span></div></div><div class="c-box">'+p.boxes+'<small>BOXES</small></div></div>';
+    return '<div class="card'+(s==='OUT'?' dead':(s==='ORDER'?' hot':''))+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div><div class="c-meta">'+p.sku+' &middot; '+p.cat+' &middot; '+p.upb+' '+p.unit+'/box</div><div style="margin-top:6px"><span class="pill s-'+s+'">'+label(s)+'</span></div><div class="c-meta" style="margin-top:4px">'+dosLabel(p)+'</div></div><div class="c-box">'+p.boxes+'<small>BOXES</small></div></div>';
   }).join(''):'<div class="empty">No products match these filters</div>';
 }
 ['stk-q','stk-cat','stk-brand','stk-status'].forEach(function(id){
@@ -1280,9 +1309,14 @@ function buildPDF(m){
 
 function renderAttn(){
   var r=PRODUCTS.filter(function(p){var s=statusOf(p);return s==='ORDER'||s==='OUT'||s==='LOW'});
-  r.sort(function(a,b){return(a.boxes/(a.min||1))-(b.boxes/(b.min||1))});
+  r.sort(function(a,b){
+    var da=daysOfSupply(a),db=daysOfSupply(b);
+    if(da===null&&db===null)return(a.boxes/(a.min||1))-(b.boxes/(b.min||1));
+    if(da===null)return 1; if(db===null)return -1;
+    return da-db;
+  });
   document.getElementById('at-list').innerHTML=r.length?r.map(function(p){var s=statusOf(p);
-    return '<div class="card'+(s==='OUT'?' dead':' hot')+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div><div class="c-meta">'+p.sku+' &middot; min '+p.min+' boxes</div><div style="margin-top:5px"><span class="pill s-'+s+'">'+label(s)+'</span> <span style="font-size:10.5px;font-weight:700;color:#8f451c">order +'+Math.max(0,p.min*2-p.boxes)+'</span></div></div><div class="c-box">'+p.boxes+'<small>ON HAND</small></div></div>';
+    return '<div class="card'+(s==='OUT'?' dead':' hot')+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div><div class="c-meta">'+p.sku+' &middot; min '+p.min+' boxes</div><div style="margin-top:5px"><span class="pill s-'+s+'">'+label(s)+'</span> <span style="font-size:10.5px;font-weight:700;color:#8f451c">order +'+Math.max(0,p.min*2-p.boxes)+'</span></div><div class="c-meta" style="margin-top:3px">'+dosLabel(p)+'</div></div><div class="c-box">'+p.boxes+'<small>ON HAND</small></div></div>';
   }).join(''):'<div class="empty">Everything is above minimum</div>';
 }
 
@@ -1520,6 +1554,16 @@ function applyPreset(v){
   renderStats();
 }
 function daysBetween(a,b){return Math.max(1,Math.round((new Date(b)-new Date(a))/86400000)+1);}
+function sparkline(byDay,f,t){
+  var out=[],d=new Date(f),endD=new Date(t),n=0;
+  while(d<=endD&&n<40){var iso=d.toISOString().slice(0,10);out.push(byDay[iso]||0);d.setDate(d.getDate()+1);n++;}
+  if(out.length>21){var step=Math.ceil(out.length/21),red=[];
+    for(var i=0;i<out.length;i+=step){var sum=0;for(var j=i;j<Math.min(i+step,out.length);j++)sum+=out[j];red.push(sum);}
+    out=red;}
+  var mx=Math.max.apply(null,out.concat([1]));
+  return '<div class="spark">'+out.map(function(v){
+    return '<i class="'+(v>=mx*0.75?'hi':'')+'" style="height:'+Math.max(4,100*v/mx)+'%"></i>';}).join('')+'</div>';
+}
 
 function renderStats(){
   var f=document.getElementById('st-from').value||shift(29),t=document.getElementById('st-to').value||TODAY;
@@ -1530,7 +1574,7 @@ function renderStats(){
 
   var rows=HISTORY.filter(function(h){return h.date>=f&&h.date<=t});
   var inBoxes=0,customerOut=0,transferBoxes=0,outBoxes=0,moveCount=rows.length;
-  var byProd={},byCat={},byWho={},byDay={},stockByCat={};
+  var byProd={},byCat={},byBrand={},byDay={},stockByCat={};
   rows.forEach(function(h){
     h.lines.forEach(function(l){
       var qty=l.boxes||0;
@@ -1541,21 +1585,22 @@ function renderStats(){
         byProd[l.name]=(byProd[l.name]||0)+qty;
         var movedCat=l.cat||((prod(l.sku)||{}).cat)||'Other';
         byCat[movedCat]=(byCat[movedCat]||0)+qty;
+        var movedBrand=l.brand||((prod(l.sku)||{}).brand)||'Other';
+        byBrand[movedBrand]=(byBrand[movedBrand]||0)+qty;
       }
-      byWho[h.who||'Unknown']=(byWho[h.who||'Unknown']||0)+qty;
       byDay[h.date]=(byDay[h.date]||0)+qty;
     });
   });
 
-  var stockBoxes=0,stockUnits=0,ok=0,low=0,order=0,out=0,setmin=0,unmovedN=0,unmovedBoxes=0;
+  var stockBoxes=0,stockUnits=0,ok=0,low=0,order=0,out=0,setmin=0,underWeek=0;
   PRODUCTS.forEach(function(p){
     stockBoxes+=p.boxes;stockUnits+=p.boxes*p.upb;
     stockByCat[p.cat]=(stockByCat[p.cat]||0)+p.boxes;
     var st=statusOf(p);
     if(st==='OK')ok++;else if(st==='LOW')low++;else if(st==='ORDER')order++;else if(st==='OUT')out++;else setmin++;
-    if(!byProd[p.name]&&p.boxes>0){unmovedN++;unmovedBoxes+=p.boxes;}
+    var dos=daysOfSupply(p);
+    if(dos!==null&&dos<7)underWeek++;
   });
-  var dailyOut=outBoxes/days,cover=dailyOut?stockBoxes/dailyOut:0;
   var inStock=PRODUCTS.length?100*(PRODUCTS.length-out)/PRODUCTS.length:0;
   var reorderN=0,reorderBoxes=0;
   PRODUCTS.forEach(function(p){var st=statusOf(p);if(st==='ORDER'||st==='OUT'){reorderN++;reorderBoxes+=Math.max(0,p.min*SETTINGS.target-p.boxes);}});
@@ -1566,6 +1611,13 @@ function renderStats(){
     if(!a.length)return '<div class="stat-s">No movement in this period</div>';
     var max=a[0][1]||1;
     return a.map(function(r){return '<div class="rank"><span>'+r[0]+'</span><span>'+r[1]+' bx</span></div><div class="bar"><i style="width:'+Math.max(3,100*r[1]/max)+'%"></i></div>';}).join('');
+  }
+  function velocityRank(obj,n){
+    var a=[];for(var key in obj)a.push([key,obj[key]/days*7]);
+    a.sort(function(x,y){return y[1]-x[1]});a=a.slice(0,n);
+    if(!a.length)return '<div class="stat-s">No movement in this period</div>';
+    var max=a[0][1]||1;
+    return a.map(function(r){return '<div class="rank"><span>'+r[0]+'</span><span>'+(r[1]>=10?Math.round(r[1]):r[1].toFixed(1))+' bx/wk</span></div><div class="bar"><i style="width:'+Math.max(3,100*r[1]/max)+'%"></i></div>';}).join('');
   }
 
   var H='<div class="hero2">'+
@@ -1587,246 +1639,22 @@ function renderStats(){
 
   H+='<div class="hero2">'+
     '<div class="big"><div class="big-l">All moved out</div><div class="big-v">'+outBoxes+'</div><div class="big-d flat">customer stock-out + transfers</div></div>'+
-    '<div class="big"><div class="big-l">Days of cover</div><div class="big-v">'+(dailyOut?cover.toFixed(0):'\u2014')+'</div><div class="big-d flat">at current outflow</div></div>'+
+    '<div class="big"><div class="big-l">Under a week of stock</div><div class="big-v">'+underWeek+'</div><div class="big-d flat">products, at current pace</div></div>'+
     '<div class="big"><div class="big-l">In-stock rate</div><div class="big-v">'+inStock.toFixed(0)+'%</div><div class="big-d '+(out?'down':'up')+'">'+(out?out+' at zero':'nothing at zero')+'</div></div>'+
     '<div class="big"><div class="big-l">Suggested reorder</div><div class="big-v">'+Math.round(reorderBoxes)+'</div><div class="big-d flat">boxes across '+reorderN+' products</div></div></div>';
 
-  H+='<div class="stat"><div class="stat-l">Daily movement</div>'+sparkline(byDay)+'<div class="stat-s">'+moveCount+' movements recorded in '+days+' days</div></div>';
-  H+='<div class="sechead">Fastest-moving products</div><div class="stat">'+inventoryRank(byProd,7)+'</div>';
-  H+='<div class="sechead">Boxes moved out by category</div><div class="stat">'+inventoryRank(byCat,7)+'</div>';
-  H+='<div class="sechead">Boxes handled by staff</div><div class="stat">'+inventoryRank(byWho,5)+'</div>';
-  H+='<div class="sechead">No movement in this period</div><div class="stat"><div class="stat-v">'+unmovedN+' products</div><div class="stat-s">'+unmovedBoxes+' boxes are currently on hand without a movement in the selected period.</div></div>';
+  H+='<div class="stat"><div class="stat-l">Daily movement</div>'+sparkline(byDay,f,t)+'<div class="stat-s">'+moveCount+' movements recorded in '+days+' days</div></div>';
+  H+='<div class="sechead">Velocity by category</div><div class="stat">'+velocityRank(byCat,7)+'</div>';
+  H+='<div class="sechead">Velocity by brand</div><div class="stat">'+velocityRank(byBrand,7)+'</div>';
+  H+='<div class="sechead">Velocity by product</div><div class="stat">'+velocityRank(byProd,7)+'</div>';
 
   var insights=[];
   if(out)insights.push(['d-bad',out+' product'+(out===1?' is':'s are')+' out of stock.']);
   if(order)insights.push(['d-warn',order+' product'+(order===1?' is':'s are')+' at or below minimum.']);
+  if(underWeek)insights.push(['d-warn',underWeek+' product'+(underWeek===1?' has':'s have')+' under a week of stock left at the current pace.']);
   if(setmin)insights.push(['d-neutral',setmin+' product'+(setmin===1?' has':'s have')+' no minimum set.']);
-  if(dailyOut&&cover<14)insights.push(['d-warn','Current stock provides about '+cover.toFixed(0)+' days of cover.']);
   if(!insights.length)insights.push(['d-good','Stock levels are healthy for the selected period.']);
   H+='<div class="sechead">What needs attention</div><div class="stat">'+insights.map(function(x){return '<div class="insight"><span class="dotc '+x[0]+'"></span><span>'+x[1]+'</span></div>';}).join('')+'</div>';
-  document.getElementById('st-list').innerHTML=H;
-  return;
-
-  var f=document.getElementById('st-from').value||shift(29),t=document.getElementById('st-to').value||TODAY;
-  if(f>t){var tmp=f;f=t;t=tmp;}
-  var days=daysBetween(f,t);
-  document.getElementById('pb-range').textContent=nice(f)+'  \u2013  '+nice(t);
-  document.getElementById('pb-days').textContent=days+' days  \u00b7  compared with the previous '+days+' days';
-
-  var pf=new Date(f);pf.setDate(pf.getDate()-days);var prevFrom=pf.toISOString().slice(0,10);
-  var pt=new Date(f);pt.setDate(pt.getDate()-1);var prevEnd=pt.toISOString().slice(0,10);
-  function slice(a,b){return HISTORY.filter(function(h){return h.date>=a&&h.date<=b});}
-  var cur=slice(f,t),prev=slice(prevFrom,prevEnd);
-
-  function agg(rows){
-    var o={rev:0,cost:0,outBoxes:0,inBoxes:0,units:0,orders:0,invoices:0,transfers:0,receipts:0,lines:0,
-      byCust:{},byProd:{},byCat:{},byWho:{},byDay:{},listValue:0,
-      profitCust:{},profitProd:{},profitCat:{},marginCust:{},revCust:{},purchases:0};
-    rows.forEach(function(h){
-      o.orders++;
-      if(h.type==='invoice')o.invoices++;else if(h.type==='transfer')o.transfers++;else o.receipts++;
-      h.lines.forEach(function(l){
-        o.lines++;
-        if(h.type==='receipt')o.inBoxes+=l.boxes;else o.outBoxes+=l.boxes;
-        o.units+=l.boxes*l.upb;
-        if(h.type==='receipt')o.purchases+=l.boxes*(l.cost||0);
-        if(h.type==='invoice'){
-          var rev=l.boxes*l.price, cst=l.boxes*(l.cost||0), gp=rev-cst;
-          o.rev+=rev; o.cost+=cst;
-          o.byCust[h.cust]=(o.byCust[h.cust]||0)+rev;
-          o.revCust[h.cust]=(o.revCust[h.cust]||0)+rev;
-          o.profitCust[h.cust]=(o.profitCust[h.cust]||0)+gp;
-          o.profitProd[l.name]=(o.profitProd[l.name]||0)+gp;
-          o.profitCat[l.cat||'Other']=(o.profitCat[l.cat||'Other']||0)+gp;
-          var pp=prod(l.sku);if(pp)o.listValue+=l.boxes*pp.price;}
-        if(h.type!=='receipt'){o.byProd[l.name]=(o.byProd[l.name]||0)+l.boxes;o.byCat[l.cat||'Other']=(o.byCat[l.cat||'Other']||0)+l.boxes;}
-        o.byWho[h.who]=(o.byWho[h.who]||0)+l.boxes;
-        o.byDay[h.date]=(o.byDay[h.date]||0)+l.boxes;
-      });
-    });
-    return o;
-  }
-  var A=agg(cur),B=agg(prev);
-
-  var stockBoxes=0,stockValue=0,stockUnits=0,ok=0,low=0,order=0,out=0,setmin=0,deadN=0,deadV=0;
-  var moved={};cur.forEach(function(h){h.lines.forEach(function(l){moved[l.sku]=1})});
-  PRODUCTS.forEach(function(p){
-    stockBoxes+=p.boxes;stockUnits+=p.boxes*p.upb;stockValue+=p.boxes*p.price;
-    var st=statusOf(p);
-    if(st==='OK')ok++;else if(st==='LOW')low++;else if(st==='ORDER')order++;else if(st==='OUT')out++;else setmin++;
-    if(!moved[p.sku]&&p.boxes>0){deadN++;deadV+=p.boxes*p.price;}
-  });
-
-  var perDay=A.outBoxes/days, cover=perDay>0?stockBoxes/perDay:0;
-  var turns=stockBoxes>0?(A.outBoxes/stockBoxes)*(365/days):0;
-  var inStock=100*(PRODUCTS.length-out)/PRODUCTS.length;
-  var aov=A.invoices?A.rev/A.invoices:0;
-  var revPerBox=A.outBoxes?A.rev/A.outBoxes:0;
-  var realisation=A.listValue?A.rev/A.listValue:0;
-  var linesPer=A.orders?A.lines/A.orders:0;
-  var activeDays=Object.keys(A.byDay).length;
-  var reorderN=0,reorderV=0;
-  PRODUCTS.forEach(function(p){var st=statusOf(p);if(st==='ORDER'||st==='OUT'){reorderN++;reorderV+=Math.max(0,p.min*2-p.boxes)*p.price;}});
-  var custArr=[];for(var k in A.byCust)custArr.push([k,A.byCust[k]]);
-  custArr.sort(function(a,b){return b[1]-a[1]});
-  var conc=A.rev>0&&custArr.length?100*custArr[0][1]/A.rev:0;
-
-  function pct(a,b){return b>0?((a-b)/b*100):(a>0?100:0);}
-  function delta(v,invert){
-    if(!isFinite(v)||Math.round(v)===0)return '<div class="big-d flat">no change</div>';
-    var good=invert?v<0:v>0;
-    return '<div class="big-d '+(good?'up':'down')+'">'+(v>0?'\u25b2 ':'\u25bc ')+Math.abs(v).toFixed(0)+'% vs previous</div>';
-  }
-  function sparkline(byDay){
-    var out=[],d=new Date(f),endD=new Date(t),n=0;
-    while(d<=endD&&n<40){var iso=d.toISOString().slice(0,10);out.push(byDay[iso]||0);d.setDate(d.getDate()+1);n++;}
-    if(out.length>21){var step=Math.ceil(out.length/21),red=[];
-      for(var i=0;i<out.length;i+=step){var sum=0;for(var j=i;j<Math.min(i+step,out.length);j++)sum+=out[j];red.push(sum);}
-      out=red;}
-    var mx=Math.max.apply(null,out.concat([1]));
-    return '<div class="spark">'+out.map(function(v){
-      return '<i class="'+(v>=mx*0.75?'hi':'')+'" style="height:'+Math.max(4,100*v/mx)+'%"></i>';}).join('')+'</div>';
-  }
-  function ranked(obj,n,fmt,rust){
-    var a=[];for(var k in obj)a.push([k,obj[k]]);
-    a.sort(function(x,y){return y[1]-x[1]});a=a.slice(0,n);
-    if(!a.length)return '<div style="font-size:11px;color:#8a8780;font-weight:600;padding:8px 0">No activity in this period</div>';
-    var mx=a[0][1];
-    return a.map(function(r){
-      return '<div class="rank"><span>'+r[0]+'</span><span>'+fmt(r[1])+'</span></div><div class="bar'+(rust?' rust':'')+'"><i style="width:'+Math.max(3,100*r[1]/mx)+'%"></i></div>';
-    }).join('');
-  }
-
-  var H='';
-
-  /* headline pair */
-  H+='<div class="hero2">';
-  H+='<div class="big"><div class="big-l">Revenue</div><div class="big-v">'+money(A.rev)+'</div>'+delta(pct(A.rev,B.rev))+'</div>';
-  H+='<div class="big"><div class="big-l">Boxes out</div><div class="big-v">'+A.outBoxes+'</div>'+delta(pct(A.outBoxes,B.outBoxes))+'</div>';
-  H+='</div>';
-
-  /* daily rhythm */
-  H+='<div class="stat"><div class="stat-l">Daily shipping rhythm</div>'+sparkline(A.byDay)+
-     '<div class="stat-s">Active on '+activeDays+' of '+days+' days &middot; '+perDay.toFixed(1)+' boxes per day average</div></div>';
-
-  /* stock health gauge */
-  var tot=PRODUCTS.length;
-  H+='<div class="sechead">Inventory health</div>';
-  H+='<div class="stat"><div class="stat-l">Status of all '+tot+' products</div><div class="gauge">'+
-     '<i class="g-ok" style="width:'+(100*ok/tot)+'%"></i><i class="g-low" style="width:'+(100*low/tot)+'%"></i>'+
-     '<i class="g-order" style="width:'+(100*order/tot)+'%"></i><i class="g-out" style="width:'+(100*out/tot)+'%"></i>'+
-     '<i class="g-set" style="width:'+(100*setmin/tot)+'%"></i></div>'+
-     '<div class="legend">'+
-     '<span class="lg"><b class="g-ok" style="background:#3d8a56"></b>'+ok+' OK</span>'+
-     '<span class="lg"><b style="background:#E0A33A"></b>'+low+' low</span>'+
-     '<span class="lg"><b style="background:#C1622D"></b>'+order+' order</span>'+
-     '<span class="lg"><b style="background:#B4443F"></b>'+out+' out</span>'+
-     '<span class="lg"><b style="background:#c9c5bd"></b>'+setmin+' no min</span></div></div>';
-
-  H+='<div class="hero2">';
-  H+='<div class="big"><div class="big-l">Days of cover</div><div class="big-v">'+(perDay?cover.toFixed(0):'&mdash;')+'</div><div class="big-d flat">at current outflow</div></div>';
-  H+='<div class="big"><div class="big-l">Stock value</div><div class="big-v">'+money(stockValue)+'</div><div class="big-d flat">'+stockBoxes+' boxes</div></div>';
-  H+='<div class="big"><div class="big-l">Turns / year</div><div class="big-v">'+turns.toFixed(1)+'</div><div class="big-d flat">annualised</div></div>';
-  H+='<div class="big"><div class="big-l">In-stock rate</div><div class="big-v">'+inStock.toFixed(0)+'%</div>'+
-     (out?'<div class="big-d down">'+out+' at zero</div>':'<div class="big-d up">nothing at zero</div>')+'</div>';
-  H+='<div class="big"><div class="big-l">Dead stock</div><div class="big-v">'+money(deadV)+'</div><div class="big-d '+(deadV>stockValue*0.15?'down':'flat')+'">'+deadN+' products unmoved</div></div>';
-  H+='<div class="big"><div class="big-l">To reorder</div><div class="big-v">'+money(reorderV)+'</div><div class="big-d flat">'+reorderN+' products</div></div>';
-  H+='</div>';
-
-  /* ── PROFIT ── */
-  var gross=A.rev-A.cost;
-  var margin=A.rev?100*gross/A.rev:0;
-  var markup=A.cost?100*gross/A.cost:0;
-  var gprev=B.rev-B.cost;
-  var profitPerBox=A.outBoxes?gross/A.outBoxes:0;
-  var profitPerOrder=A.invoices?gross/A.invoices:0;
-
-  H+='<div class="sechead">Profit</div>';
-  H+='<div class="hero2">';
-  H+='<div class="big"><div class="big-l">Gross profit</div><div class="big-v">'+money(gross)+'</div>'+delta(pct(gross,gprev))+'</div>';
-  H+='<div class="big"><div class="big-l">Margin</div><div class="big-v">'+margin.toFixed(1)+'%</div><div class="big-d flat">of revenue kept</div></div>';
-  H+='<div class="big"><div class="big-l">Markup</div><div class="big-v">'+markup.toFixed(0)+'%</div><div class="big-d flat">added to cost</div></div>';
-  H+='<div class="big"><div class="big-l">Cost of goods</div><div class="big-v">'+money(A.cost)+'</div><div class="big-d flat">what you paid</div></div>';
-  H+='<div class="big"><div class="big-l">Profit per box</div><div class="big-v">'+money(profitPerBox)+'</div><div class="big-d flat">across '+A.outBoxes+' boxes</div></div>';
-  H+='<div class="big"><div class="big-l">Profit per invoice</div><div class="big-v">'+money(profitPerOrder)+'</div><div class="big-d flat">'+A.invoices+' invoices</div></div>';
-  H+='</div>';
-
-  /* revenue vs profit bar */
-  if(A.rev>0){
-    H+='<div class="stat"><div class="stat-l">Where every dollar goes</div>'+
-    '<div class="gauge" style="height:13px"><i style="width:'+(100*A.cost/A.rev)+'%;background:#C1622D"></i>'+
-    '<i style="width:'+(100*gross/A.rev)+'%;background:#3d8a56"></i></div>'+
-    '<div class="legend"><span class="lg"><b style="background:#C1622D"></b>'+money(A.cost)+' cost ('+(100*A.cost/A.rev).toFixed(0)+'%)</span>'+
-    '<span class="lg"><b style="background:#3d8a56"></b>'+money(gross)+' profit ('+margin.toFixed(0)+'%)</span></div></div>';
-  }
-
-  /* commercial */
-  H+='<div class="sechead">Commercial quality</div>';
-  H+='<div class="hero2">';
-  H+='<div class="big"><div class="big-l">Avg invoice</div><div class="big-v">'+money(aov)+'</div>'+delta(pct(aov,B.invoices?B.rev/B.invoices:0))+'</div>';
-  H+='<div class="big"><div class="big-l">Revenue / box</div><div class="big-v">'+money(revPerBox)+'</div><div class="big-d flat">mix indicator</div></div>';
-  H+='<div class="big"><div class="big-l">Price realisation</div><div class="big-v">'+(realisation?(realisation*100).toFixed(0)+'%':'&mdash;')+'</div><div class="big-d '+(realisation<0.98?'down':'up')+'">of list price</div></div>';
-  H+='<div class="big"><div class="big-l">Top customer share</div><div class="big-v">'+conc.toFixed(0)+'%</div><div class="big-d '+(conc>40?'down':'up')+'">of revenue</div></div>';
-  H+='</div>';
-
-  H+='<div class="sechead">Revenue by customer</div><div class="stat">'+ranked(A.byCust,6,money)+'</div>';
-
-  H+='<div class="sechead">Profit by customer</div><div class="stat">'+
-     ranked(A.profitCust,6,money,true)+
-     '<div class="stat-s" style="margin-top:10px">'+
-     (function(){
-       var a=[];for(var k in A.profitCust)a.push([k,A.profitCust[k],A.revCust[k]||0]);
-       a.sort(function(x,y){return y[1]-x[1]});
-       if(!a.length)return 'No invoiced sales in this period.';
-       return a.map(function(r){
-         var m=r[2]?100*r[1]/r[2]:0;
-         return r[0]+' &mdash; '+m.toFixed(0)+'% margin';}).join('<br>');
-     })()+'</div></div>';
-
-  H+='<div class="sechead">Profit by product</div><div class="stat">'+ranked(A.profitProd,7,money,true)+'</div>';
-  H+='<div class="sechead">Profit by category</div><div class="stat">'+ranked(A.profitCat,7,money,true)+'</div>';
-  H+='<div class="sechead">Fastest moving products</div><div class="stat">'+ranked(A.byProd,7,function(v){return v+' bx'})+'</div>';
-  H+='<div class="sechead">Categories by volume</div><div class="stat">'+ranked(A.byCat,7,function(v){return v+' bx'})+'</div>';
-
-  var dead={};PRODUCTS.forEach(function(p){if(!moved[p.sku]&&p.boxes>0)dead[p.name]=p.boxes*p.price});
-  H+='<div class="sechead">Capital sitting still</div><div class="stat">'+ranked(dead,5,money,true)+'</div>';
-  H+='<div class="sechead">Boxes handled by staff</div><div class="stat">'+ranked(A.byWho,4,function(v){return v+' bx'})+'</div>';
-
-  /* activity mix */
-  H+='<div class="sechead">Activity</div><div class="stat">'+
-     '<div class="rank"><span>Invoices</span><span>'+A.invoices+'</span></div>'+
-     '<div class="rank"><span>Transfers</span><span>'+A.transfers+'</span></div>'+
-     '<div class="rank"><span>Receipts</span><span>'+A.receipts+'</span></div>'+
-     '<div class="stat-s">'+A.lines+' lines in total &middot; '+linesPer.toFixed(1)+' products per movement &middot; '+
-     A.inBoxes+' boxes in vs '+A.outBoxes+' out (net '+(A.inBoxes-A.outBoxes>0?'+':'')+(A.inBoxes-A.outBoxes)+')</div></div>';
-
-  /* insights */
-  var ins=[];
-  if(out>0)ins.push(['d-bad',out+(out===1?' product is':' products are')+' at zero. Each stockout sends a restaurant to another supplier.']);
-  if(perDay&&cover<14)ins.push(['d-warn','Only '+cover.toFixed(0)+' days of cover left at the current rate. Place orders this week.']);
-  else if(perDay&&cover>90)ins.push(['d-warn',cover.toFixed(0)+' days of cover is well above need. Cash is tied up in stock.']);
-  if(deadV>stockValue*0.15)ins.push(['d-warn',money(deadV)+' ('+(100*deadV/stockValue).toFixed(0)+'% of stock value) has not moved in this period. Promote it or stop reordering it.']);
-  if(conc>40)ins.push(['d-warn',custArr.length?custArr[0][0]+' is '+conc.toFixed(0)+'% of revenue. Losing them would hurt.':'']);
-  if(setmin>0)ins.push(['d-neutral',setmin+' products have no minimum set, so they can never trigger a reorder alert.']);
-  if(A.rev>0&&margin<15)ins.push(['d-bad','Margin is only '+margin.toFixed(0)+'%. After handling and delivery there may be nothing left.']);
-  if(A.rev>0&&margin>=30)ins.push(['d-good','Margin of '+margin.toFixed(0)+'% is healthy for wholesale food.']);
-  (function(){
-    var worst=null;
-    for(var k in A.profitCust){
-      var m=A.revCust[k]?100*A.profitCust[k]/A.revCust[k]:0;
-      if(A.revCust[k]>0&&(!worst||m<worst[1]))worst=[k,m];
-    }
-    if(worst&&worst[1]<12)ins.push(['d-warn',worst[0]+' is only '+worst[1].toFixed(0)+'% margin. Their agreed price may be too low.']);
-  })();
-  if(A.purchases>0)ins.push(['d-neutral','Bought '+money(A.purchases)+' of stock this period against '+money(A.rev)+' of sales.']);
-  if(realisation&&realisation<0.98)ins.push(['d-warn','Selling at '+(realisation*100).toFixed(0)+'% of list price. Discounts are costing '+money(A.listValue-A.rev)+' this period.']);
-  if(turns>0&&turns<4)ins.push(['d-warn','Stock turns '+turns.toFixed(1)+'x a year. Under 4 usually means overstocking.']);
-  if(pct(A.rev,B.rev)>10)ins.push(['d-good','Revenue is up '+pct(A.rev,B.rev).toFixed(0)+'% on the previous period.']);
-  if(!ins.length)ins.push(['d-good','Nothing needs attention. Stock levels, pricing and concentration all look healthy.']);
-  H+='<div class="sechead">What this means</div><div class="stat">'+ins.map(function(x){
-    return '<div class="insight"><span class="dotc '+x[0]+'"></span><span>'+x[1]+'</span></div>';}).join('')+'</div>';
-  H+='<div style="height:8px"></div>';
-
   document.getElementById('st-list').innerHTML=H;
 }
 
