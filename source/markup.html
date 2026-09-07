@@ -168,48 +168,64 @@
 
     <div class="screen" id="s-receive">
       <div class="sticky">
-        <div class="tabs">
-          <button class="tab on" data-rt="existing">Existing products</button>
-          <button class="tab" data-rt="new">New product</button>
+        <div class="frow" style="margin-top:0">
+          <div style="flex:1"><label class="lab">Supplier</label><select class="ctrl" id="rc-sup"></select></div>
+          <div style="flex:1"><label class="lab">Delivery note number</label><input class="ctrl" id="rc-ref" placeholder="Optional"></div>
         </div>
-        <div id="rc-existing">
-          <div class="frow" style="margin-top:0">
-            <div style="flex:1"><label class="lab">Supplier</label><select class="ctrl" id="rc-sup"></select></div>
-            <div style="flex:1"><label class="lab">Delivery note number</label><input class="ctrl" id="rc-ref" placeholder="Optional"></div>
-          </div>
-          <div class="searchrow" style="margin-top:8px">
-            <input class="inp" id="rc-q" placeholder="Search name, SKU or brand">
+        <div id="rc-searchwrap" style="margin-top:8px">
+          <div class="searchrow">
+            <input class="inp" id="rc-q" placeholder="Search or type a new product name" autocomplete="off">
             <button class="scanbtn" onclick="openScan('rc')">Scan</button>
           </div>
-          <div class="frow"><select id="rc-cat"></select><select id="rc-brand"></select></div>
           <div class="fcount" id="rc-count"></div>
         </div>
       </div>
 
       <div class="list" id="rc-list"></div>
 
+      <div id="rc-existing-detail" style="display:none">
+        <div class="stat"><div class="sechead" style="margin-top:0">Product information</div><div id="rc-ed-info"></div></div>
+        <div class="stat">
+          <div class="sechead" style="margin-top:0">Current stock &amp; this delivery</div>
+          <div class="c-meta" id="rc-ed-onhand" style="font-size:12.5px;margin-bottom:9px"></div>
+          <div class="qty">
+            <button class="qbtn minus" onclick="rcedBump(-1)">&#8722;</button>
+            <input type="number" inputmode="numeric" id="rc-ed-qty" value="" placeholder="0" enterkeyhint="done" onfocus="this.select()" onkeydown="if(event.key===&quot;Enter&quot;){event.preventDefault();this.blur();}" oninput="rcedPreview()">
+            <button class="qbtn" onclick="rcedBump(1)">+</button>
+          </div>
+        </div>
+        <button class="btn" id="rc-ed-commit">Add to delivery</button>
+        <button class="btn ghost" id="rc-ed-cancel">Search another product</button>
+      </div>
+
       <div id="rc-new" style="display:none">
-        <div class="fg"><label class="lab">Category</label>
-          <div class="searchrow"><select class="ctrl" id="np-cat"></select><button class="scanbtn" onclick="addCategory()">+ New</button></div></div>
-        <div class="fg"><label class="lab">Brand</label>
-          <div class="searchrow"><select class="ctrl" id="np-brand"></select><button class="scanbtn" onclick="addBrand()">+ New</button></div></div>
-        <div class="fg"><label class="lab">Product name</label><input class="ctrl" id="np-name" placeholder="e.g. Moxito"></div>
-        <div class="fg"><label class="lab">Flavour or size <span style="color:#8a8780;font-weight:600">(optional)</span></label><input class="ctrl" id="np-flavor" placeholder="e.g. Lime, 1L, 5kg"></div>
-        <div class="frow" style="margin-bottom:10px">
-          <div style="flex:1"><label class="lab">Unit</label>
-            <select class="ctrl" id="np-unit"><option>can</option><option>bottle</option><option>pack</option><option>bag</option><option>jar</option><option>piece</option></select></div>
-          <div style="flex:1"><label class="lab">Units per box</label><input class="ctrl" id="np-upb" type="number" inputmode="numeric" placeholder="24"></div>
+        <div class="stat">
+          <div class="sechead" style="margin-top:0">Product information</div>
+          <div class="fg"><label class="lab">Category</label>
+            <div class="searchrow"><select class="ctrl" id="np-cat"></select><button class="scanbtn" onclick="addCategory()">+ New</button></div></div>
+          <div class="fg"><label class="lab">Brand</label>
+            <div class="searchrow"><select class="ctrl" id="np-brand"></select><button class="scanbtn" onclick="addBrand()">+ New</button></div></div>
+          <div class="fg"><label class="lab">Product name</label><input class="ctrl" id="np-name" placeholder="e.g. Moxito"></div>
+          <div class="fg"><label class="lab">Flavour or size <span style="color:#8a8780;font-weight:600">(optional)</span></label><input class="ctrl" id="np-flavor" placeholder="e.g. Lime, 1L, 5kg"></div>
+          <div class="frow" style="margin-bottom:10px">
+            <div style="flex:1"><label class="lab">Unit</label>
+              <select class="ctrl" id="np-unit"><option>can</option><option>bottle</option><option>pack</option><option>bag</option><option>jar</option><option>piece</option></select></div>
+            <div style="flex:1"><label class="lab">Units per box</label><input class="ctrl" id="np-upb" type="number" inputmode="numeric" placeholder="24"></div>
+          </div>
+          <div class="frow" style="margin-bottom:10px;display:none" aria-hidden="true">
+            <div style="flex:1"><label class="lab">Cost per box</label><input class="ctrl" id="np-cost" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+            <div style="flex:1"><label class="lab">Selling price</label><input class="ctrl" id="np-price" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+          </div>
+          <div class="fg" style="margin-bottom:0"><label class="lab">Minimum boxes</label><input class="ctrl" id="np-min" type="number" inputmode="numeric" placeholder="0"></div>
+          <div class="fcount" id="np-sku" style="margin-top:8px">SKU will be generated automatically</div>
         </div>
-        <div class="frow" style="margin-bottom:10px;display:none" aria-hidden="true">
-          <div style="flex:1"><label class="lab">Cost per box</label><input class="ctrl" id="np-cost" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>
-          <div style="flex:1"><label class="lab">Selling price</label><input class="ctrl" id="np-price" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+        <div class="stat">
+          <div class="sechead" style="margin-top:0">Current stock &amp; this delivery</div>
+          <div class="c-meta" style="font-size:12.5px;margin-bottom:9px">New product &middot; 0 boxes on hand currently</div>
+          <div class="fg" style="margin-bottom:0"><label class="lab">Boxes arriving now</label><input class="ctrl" id="np-boxes" type="number" inputmode="numeric" placeholder="0"></div>
         </div>
-        <div class="frow" style="margin-bottom:10px">
-          <div style="flex:1"><label class="lab">Minimum boxes</label><input class="ctrl" id="np-min" type="number" inputmode="numeric" placeholder="0"></div>
-          <div style="flex:1"><label class="lab">Boxes arriving</label><input class="ctrl" id="np-boxes" type="number" inputmode="numeric" placeholder="0"></div>
-        </div>
-        <div class="fcount" id="np-sku" style="margin-bottom:10px">SKU will be generated automatically</div>
         <button class="btn" id="np-add">Create product and add to delivery</button>
+        <button class="btn ghost" id="rc-new-cancel">Search another product</button>
       </div>
     </div>
 
