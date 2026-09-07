@@ -43,6 +43,13 @@ Owner uploaded their own `Warehouse_Inventory_v16_1.xlsx` (a mature, pre-existin
   - Noticed a pre-existing, unrelated bug while there: at 1440px the Receive screen's floating `rdock` ("Nothing added / Review delivery") panel visually overlaps the Scan/Filters buttons - confirmed via a baseline screenshot that this predates this change (present since before the sidebar revert). Left untouched, given the owner's recent rejection of desktop-layout changes; flag it if he wants it fixed separately.
   - Committed as `831b013`. Republished the Artifact preview with the same changes.
 
+- Owner tried the collapsible "Filters" toggle and asked to undo the hiding: keep every filter unhidden, just pack 3-4 related ones per row instead of 1-2 so they take less vertical space. Reworked both screens again:
+  - History: type/customer/product/brand (all plain `<select>` filters) now share one row of 4; the from/to date range kept its own row since date-picker inputs are a different control type and read better paired together than mixed in with selects. That's 2 filter rows total (was 3 rows of 2 before the toggle experiment, 2 rows collapsed/hidden during it). Added a `.frow-4` CSS variant (smaller font/padding + `text-overflow:ellipsis`) so four selects still read cleanly at phone width - verified the ellipsis actually kicks in for a long label like "All invoice parties".
+  - Receive: dropped the filter toggle button/badge entirely; category+brand are back to a plain always-visible row. Kept the supplier + delivery-note combined-into-one-row change from two commits ago, since that pairing (delivery metadata, not filters) already worked well and wasn't part of the complaint.
+  - Removed `wireFilterToggle()` from `source/app.js` and the `.filtbtn`/`.filtbadge`/`.filterpanel` CSS added for the toggle, since nothing is hidden anymore - net diff for this commit is negative (deletions > insertions).
+  - Verified with Playwright at 390px (filters visibly set and still functioning: History 84/133, Receive 38/91) and 1440px (4-select row still reads fine with the extra width). No console errors, no regressions on Stock.
+  - Committed as `fe549b4`. Republished the Artifact preview with the same changes.
+
 ## In progress
 
 Nothing in progress. Waiting on the owner to test the app on phone/web and report back, and to upload the workbook to Google Drive when ready.
