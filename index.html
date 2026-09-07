@@ -692,8 +692,12 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
         </div>
         <div class="stat">
           <div class="sechead" style="margin-top:0">Current stock &amp; this delivery</div>
-          <div class="c-meta" style="font-size:12.5px;margin-bottom:9px">New product &middot; 0 boxes on hand currently</div>
-          <div class="fg" style="margin-bottom:0"><label class="lab">Boxes arriving now</label><input class="ctrl" id="np-boxes" type="number" inputmode="numeric" placeholder="0"></div>
+          <div class="c-meta" id="np-onhand" style="font-size:12.5px;margin-bottom:9px">New product &middot; not in stock yet</div>
+          <div class="qty">
+            <button class="qbtn minus" onclick="npBump(-1)">&#8722;</button>
+            <input type="number" inputmode="numeric" id="np-boxes" value="" placeholder="0" enterkeyhint="done" onfocus="this.select()" onkeydown="if(event.key===&quot;Enter&quot;){event.preventDefault();this.blur();}" oninput="npPreview()">
+            <button class="qbtn" onclick="npBump(1)">+</button>
+          </div>
         </div>
         <button class="btn" id="np-add">Create product and add to delivery</button>
         <button class="btn ghost" id="rc-new-cancel">Search another product</button>
@@ -2490,6 +2494,18 @@ document.getElementById('rc-ed-commit').addEventListener('click',function(){
 });
 document.getElementById('rc-ed-cancel').addEventListener('click',rcReset);
 document.getElementById('rc-new-cancel').addEventListener('click',rcReset);
+function npPreview(){
+  var el=document.getElementById('np-onhand'); if(!el)return;
+  var n=parseInt(document.getElementById('np-boxes').value,10)||0;
+  el.innerHTML='New product &middot; not in stock yet'+(n>0?' &rarr; <b>'+n+'</b> after delivery':'');
+}
+function npBump(d){
+  var el=document.getElementById('np-boxes');
+  var v=(parseInt(el.value,10)||0)+d;
+  if(v<0)v=0;
+  el.value=v||'';
+  npPreview();
+}
 function rcPickNew(){
   rcMode='new'; rcActiveSku=null;
   document.getElementById('rc-searchwrap').style.display='none';
@@ -2498,6 +2514,7 @@ function rcPickNew(){
   fillNewProduct();
   document.getElementById('np-name').value=document.getElementById('rc-q').value.trim();
   document.getElementById('np-boxes').value='';
+  npPreview();
   document.getElementById('rc-new').style.display='block';
 }
 var RCOST={};

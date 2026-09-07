@@ -1518,6 +1518,18 @@ document.getElementById('rc-ed-commit').addEventListener('click',function(){
 });
 document.getElementById('rc-ed-cancel').addEventListener('click',rcReset);
 document.getElementById('rc-new-cancel').addEventListener('click',rcReset);
+function npPreview(){
+  var el=document.getElementById('np-onhand'); if(!el)return;
+  var n=parseInt(document.getElementById('np-boxes').value,10)||0;
+  el.innerHTML='New product &middot; not in stock yet'+(n>0?' &rarr; <b>'+n+'</b> after delivery':'');
+}
+function npBump(d){
+  var el=document.getElementById('np-boxes');
+  var v=(parseInt(el.value,10)||0)+d;
+  if(v<0)v=0;
+  el.value=v||'';
+  npPreview();
+}
 function rcPickNew(){
   rcMode='new'; rcActiveSku=null;
   document.getElementById('rc-searchwrap').style.display='none';
@@ -1526,6 +1538,7 @@ function rcPickNew(){
   fillNewProduct();
   document.getElementById('np-name').value=document.getElementById('rc-q').value.trim();
   document.getElementById('np-boxes').value='';
+  npPreview();
   document.getElementById('rc-new').style.display='block';
 }
 var RCOST={};
