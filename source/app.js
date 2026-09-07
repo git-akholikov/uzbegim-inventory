@@ -37,7 +37,21 @@ var CATICON={
  'Sweets':         ['\uD83C\uDF6C','#fbe9ef','#96426a'],
  'Dairy':          ['\uD83E\uDDC0','#fdf6e3','#8a6d1f'],
  'Meat':           ['\uD83E\uDD69','#fbeaea','#992d2d'],
- 'Bakery':         ['\uD83C\uDF5E','#f6efe4','#7d5108']
+ 'Bakery':         ['\uD83C\uDF5E','#f6efe4','#7d5108'],
+  'Produce':           ['\uD83E\uDD6C','#eaf3e6','#2f6b3a'],
+  'Frozen':            ['\uD83E\uDDCA','#e6f3fa','#1d6f8f'],
+  'Spices & Seasoning': ['\uD83E\uDDC2','#fdeee2','#a1542b'],
+  'Snacks':            ['\uD83C\uDF7F','#fdf2df','#b5790f'],
+  'Tea & Coffee':      ['\u2615','#f1e6da','#6b4423'],
+  'Pasta & Noodles':   ['\uD83C\uDF5D','#f7ecd9','#8a5a12'],
+  'Eggs':              ['\uD83E\uDD5A','#fdf7e3','#9c8a1d'],
+  'Nuts & Dried Fruits': ['\uD83E\uDD5C','#f3e9da','#7a5a28'],
+  'Condiments & Sauces': ['\uD83C\uDF6F','#fbeedd','#a5641a'],
+  'Seafood':           ['\uD83D\uDC1F','#e3eef5','#22608a'],
+  'Household & Cleaning': ['\uD83E\uDDFC','#e8f4f1','#1f7a63'],
+  'Kitchenware & Cookware': ['\uD83C\uDF73','#eee9f5','#5b4a8f'],
+  'Personal Care':     ['\uD83E\uDDF4','#fbe6ef','#a13d6e'],
+  'Paper & Disposables': ['\uD83E\uDDFB','#f0ede6','#7a6f5c'],
 };
 function catIcon(cat){
   return CATICON[cat]||['\uD83D\uDCE6','#eef1f0','#0F5C5C'];
@@ -303,7 +317,7 @@ function addBrand(){
   sel.value=n; previewSku(); toast('Brand "'+n+'" added');
 }
 var CATCODE={'Beverages':'BEV','Rice':'RIC','Flour':'FLR','Oil':'OIL','Canned':'CAN',
-             'Dry Goods':'DRY','Sunflower seeds':'SED'};
+             'Dry Goods':'DRY','Sunflower seeds':'SED','Sweets':'SWE','Dairy':'DAI','Meat':'MEA','Bakery':'BAK','Produce':'PRO','Frozen':'FRZ','Spices & Seasoning':'SPC','Snacks':'SNK','Tea & Coffee':'TEA','Pasta & Noodles':'PAS','Eggs':'EGG','Nuts & Dried Fruits':'NUT','Condiments & Sauces':'CON','Seafood':'SEA','Household & Cleaning':'HHC','Kitchenware & Cookware':'KIT','Personal Care':'PCR','Paper & Disposables':'PAP'};
 function makeSku(cat,brand){
   var cc=CATCODE[cat]||(String(cat||'GEN').replace(/[^A-Za-z]/g,'').toUpperCase()+'XXX').slice(0,3);
   var bc=(String(brand||'GEN').replace(/[^A-Za-z]/g,'').toUpperCase()+'XXX').slice(0,3);
