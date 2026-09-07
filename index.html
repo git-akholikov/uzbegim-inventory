@@ -663,9 +663,19 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
         <div class="stat">
           <div class="sechead" style="margin-top:0">Product information</div>
           <div class="fg"><label class="lab">Category</label>
-            <div class="searchrow"><select class="ctrl" id="np-cat"></select><button class="scanbtn" onclick="addCategory()">+ New</button></div></div>
+            <div class="searchrow"><select class="ctrl" id="np-cat"></select><button class="scanbtn" onclick="showInlineAdd('np-cat')">+ New</button></div>
+            <div class="searchrow" id="np-cat-newrow" style="display:none;margin-top:6px">
+              <input class="ctrl" id="np-cat-newinput" placeholder="New category name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-cat','cat');}">
+              <button class="scanbtn" onclick="confirmInlineAdd('np-cat','cat')">Add</button>
+              <button class="scanbtn" onclick="cancelInlineAdd('np-cat')">Cancel</button>
+            </div></div>
           <div class="fg"><label class="lab">Brand</label>
-            <div class="searchrow"><select class="ctrl" id="np-brand"></select><button class="scanbtn" onclick="addBrand()">+ New</button></div></div>
+            <div class="searchrow"><select class="ctrl" id="np-brand"></select><button class="scanbtn" onclick="showInlineAdd('np-brand')">+ New</button></div>
+            <div class="searchrow" id="np-brand-newrow" style="display:none;margin-top:6px">
+              <input class="ctrl" id="np-brand-newinput" placeholder="New brand name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-brand','brand');}">
+              <button class="scanbtn" onclick="confirmInlineAdd('np-brand','brand')">Add</button>
+              <button class="scanbtn" onclick="cancelInlineAdd('np-brand')">Cancel</button>
+            </div></div>
           <div class="fg"><label class="lab">Product name</label><input class="ctrl" id="np-name" placeholder="e.g. Moxito"></div>
           <div class="fg"><label class="lab">Flavour or size <span style="color:#8a8780;font-weight:600">(optional)</span></label><input class="ctrl" id="np-flavor" placeholder="e.g. Lime, 1L, 5kg"></div>
           <div class="frow" style="margin-bottom:10px">
@@ -840,9 +850,19 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
     <div class="screen" id="s-prodedit">
       <div class="sechead" id="pe-head">New product</div>
       <div class="fg"><label class="lab">Category <span class="req">required</span></label>
-        <div class="searchrow"><select class="ctrl" id="pe-cat"></select><button class="scanbtn" onclick="addCatTo('pe-cat')">+ New</button></div></div>
+        <div class="searchrow"><select class="ctrl" id="pe-cat"></select><button class="scanbtn" onclick="showInlineAdd('pe-cat')">+ New</button></div>
+        <div class="searchrow" id="pe-cat-newrow" style="display:none;margin-top:6px">
+          <input class="ctrl" id="pe-cat-newinput" placeholder="New category name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-cat','cat');}">
+          <button class="scanbtn" onclick="confirmInlineAdd('pe-cat','cat')">Add</button>
+          <button class="scanbtn" onclick="cancelInlineAdd('pe-cat')">Cancel</button>
+        </div></div>
       <div class="fg"><label class="lab">Brand <span class="req">required</span></label>
-        <div class="searchrow"><select class="ctrl" id="pe-brand"></select><button class="scanbtn" onclick="addBrandTo('pe-brand')">+ New</button></div></div>
+        <div class="searchrow"><select class="ctrl" id="pe-brand"></select><button class="scanbtn" onclick="showInlineAdd('pe-brand')">+ New</button></div>
+        <div class="searchrow" id="pe-brand-newrow" style="display:none;margin-top:6px">
+          <input class="ctrl" id="pe-brand-newinput" placeholder="New brand name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-brand','brand');}">
+          <button class="scanbtn" onclick="confirmInlineAdd('pe-brand','brand')">Add</button>
+          <button class="scanbtn" onclick="cancelInlineAdd('pe-brand')">Cancel</button>
+        </div></div>
       <div class="fg"><label class="lab">Product name <span class="req">required</span></label><input class="ctrl" id="pe-name" placeholder="e.g. Moxito"></div>
       <div class="fg"><label class="lab">Flavour or size</label><input class="ctrl" id="pe-flavor" placeholder="e.g. Lime, 1L, 5kg"></div>
       <div class="frow" style="margin-bottom:11px">
@@ -1270,19 +1290,26 @@ function fillNewProduct(){
   if(!b.options.length)b.innerHTML=brands.map(function(x){return '<option>'+x+'</option>'}).join('');
   previewSku();
 }
-function addCategory(){
-  var n=prompt('New category name'); if(!n)return;
-  n=n.trim(); if(!n)return;
-  var sel=document.getElementById('np-cat');
-  sel.insertAdjacentHTML('afterbegin','<option>'+n+'</option>');
-  sel.value=n; previewSku(); toast('Category "'+n+'" added');
+function showInlineAdd(id){
+  var row=document.getElementById(id+'-newrow'); if(!row)return;
+  row.style.display='flex';
+  var inp=document.getElementById(id+'-newinput');
+  if(inp){inp.value='';inp.focus();}
 }
-function addBrand(){
-  var n=prompt('New brand name'); if(!n)return;
-  n=n.trim(); if(!n)return;
-  var sel=document.getElementById('np-brand');
+function cancelInlineAdd(id){
+  var row=document.getElementById(id+'-newrow'); if(row)row.style.display='none';
+}
+function confirmInlineAdd(id,kind){
+  var inp=document.getElementById(id+'-newinput');
+  var n=(inp&&inp.value||'').trim();
+  if(!n){if(inp)inp.focus();return;}
+  var sel=document.getElementById(id);
   sel.insertAdjacentHTML('afterbegin','<option>'+n+'</option>');
-  sel.value=n; previewSku(); toast('Brand "'+n+'" added');
+  sel.value=n;
+  cancelInlineAdd(id);
+  if(id==='np-cat'||id==='np-brand')previewSku();
+  else if(id==='pe-cat'||id==='pe-brand')previewPeSku();
+  toast((kind==='cat'?'Category':'Brand')+' "'+n+'" added');
 }
 var CATCODE={'Beverages':'BEV','Rice':'RIC','Flour':'FLR','Oil':'OIL','Canned':'CAN',
              'Dry Goods':'DRY','Sunflower seeds':'SED','Sweets':'SWE','Dairy':'DAI','Meat':'MEA','Bakery':'BAK','Produce':'PRO','Frozen':'FRZ','Spices & Seasoning':'SPC','Snacks':'SNK','Tea & Coffee':'TEA','Pasta & Noodles':'PAS','Eggs':'EGG','Nuts & Dried Fruits':'NUT','Condiments & Sauces':'CON','Seafood':'SEA','Household & Cleaning':'HHC','Kitchenware & Cookware':'KIT','Personal Care':'PCR','Paper & Disposables':'PAP'};
@@ -1456,18 +1483,6 @@ function drawProducts(){
     if(c)openProd(parseInt(c.getAttribute('data-i'),10));
   });
 })();
-function addCatTo(id){
-  var n=prompt('New category name'); if(!n||!n.trim())return;
-  var sel=document.getElementById(id);
-  sel.insertAdjacentHTML('afterbegin','<option>'+n.trim()+'</option>');
-  sel.value=n.trim(); previewPeSku(); toast('Category "'+n.trim()+'" added');
-}
-function addBrandTo(id){
-  var n=prompt('New brand name'); if(!n||!n.trim())return;
-  var sel=document.getElementById(id);
-  sel.insertAdjacentHTML('afterbegin','<option>'+n.trim()+'</option>');
-  sel.value=n.trim(); previewPeSku(); toast('Brand "'+n.trim()+'" added');
-}
 function previewPeSku(){
   var el=document.getElementById('pe-sku'); if(!el)return;
   if(prodIdx>=0){el.textContent='SKU '+PRODUCTS[prodIdx].sku+' (cannot change)';return;}

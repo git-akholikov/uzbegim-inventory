@@ -318,19 +318,26 @@ function fillNewProduct(){
   if(!b.options.length)b.innerHTML=brands.map(function(x){return '<option>'+x+'</option>'}).join('');
   previewSku();
 }
-function addCategory(){
-  var n=prompt('New category name'); if(!n)return;
-  n=n.trim(); if(!n)return;
-  var sel=document.getElementById('np-cat');
-  sel.insertAdjacentHTML('afterbegin','<option>'+n+'</option>');
-  sel.value=n; previewSku(); toast('Category "'+n+'" added');
+function showInlineAdd(id){
+  var row=document.getElementById(id+'-newrow'); if(!row)return;
+  row.style.display='flex';
+  var inp=document.getElementById(id+'-newinput');
+  if(inp){inp.value='';inp.focus();}
 }
-function addBrand(){
-  var n=prompt('New brand name'); if(!n)return;
-  n=n.trim(); if(!n)return;
-  var sel=document.getElementById('np-brand');
+function cancelInlineAdd(id){
+  var row=document.getElementById(id+'-newrow'); if(row)row.style.display='none';
+}
+function confirmInlineAdd(id,kind){
+  var inp=document.getElementById(id+'-newinput');
+  var n=(inp&&inp.value||'').trim();
+  if(!n){if(inp)inp.focus();return;}
+  var sel=document.getElementById(id);
   sel.insertAdjacentHTML('afterbegin','<option>'+n+'</option>');
-  sel.value=n; previewSku(); toast('Brand "'+n+'" added');
+  sel.value=n;
+  cancelInlineAdd(id);
+  if(id==='np-cat'||id==='np-brand')previewSku();
+  else if(id==='pe-cat'||id==='pe-brand')previewPeSku();
+  toast((kind==='cat'?'Category':'Brand')+' "'+n+'" added');
 }
 var CATCODE={'Beverages':'BEV','Rice':'RIC','Flour':'FLR','Oil':'OIL','Canned':'CAN',
              'Dry Goods':'DRY','Sunflower seeds':'SED','Sweets':'SWE','Dairy':'DAI','Meat':'MEA','Bakery':'BAK','Produce':'PRO','Frozen':'FRZ','Spices & Seasoning':'SPC','Snacks':'SNK','Tea & Coffee':'TEA','Pasta & Noodles':'PAS','Eggs':'EGG','Nuts & Dried Fruits':'NUT','Condiments & Sauces':'CON','Seafood':'SEA','Household & Cleaning':'HHC','Kitchenware & Cookware':'KIT','Personal Care':'PCR','Paper & Disposables':'PAP'};
@@ -504,18 +511,6 @@ function drawProducts(){
     if(c)openProd(parseInt(c.getAttribute('data-i'),10));
   });
 })();
-function addCatTo(id){
-  var n=prompt('New category name'); if(!n||!n.trim())return;
-  var sel=document.getElementById(id);
-  sel.insertAdjacentHTML('afterbegin','<option>'+n.trim()+'</option>');
-  sel.value=n.trim(); previewPeSku(); toast('Category "'+n.trim()+'" added');
-}
-function addBrandTo(id){
-  var n=prompt('New brand name'); if(!n||!n.trim())return;
-  var sel=document.getElementById(id);
-  sel.insertAdjacentHTML('afterbegin','<option>'+n.trim()+'</option>');
-  sel.value=n.trim(); previewPeSku(); toast('Brand "'+n.trim()+'" added');
-}
 function previewPeSku(){
   var el=document.getElementById('pe-sku'); if(!el)return;
   if(prodIdx>=0){el.textContent='SKU '+PRODUCTS[prodIdx].sku+' (cannot change)';return;}
