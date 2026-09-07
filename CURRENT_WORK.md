@@ -8,7 +8,7 @@ This file is the crash-recovery record. Update, commit, and push it continuously
 - Branch: `main`
 - Pull request: None
 - Current assistant: Claude
-- Last checkpoint date and time: 2026-09-06
+- Last checkpoint date and time: 2026-09-07
 - Checkpoint commit: this commit
 
 ## Requested outcome
@@ -25,6 +25,7 @@ Owner uploaded their own `Warehouse_Inventory_v16_1.xlsx` (a mature, pre-existin
 - Regenerated `apps-script/uzbegim-warehouse-inventory.xlsx`: Products tab now has all 91 real SKUs (brand, flavor, unit, category, units per box, min boxes, supplier where known), Suppliers has the 4 real suppliers found in the data, Movements has one opening-balance row per product with today's real box count plus a few labeled example rows. Recalculated clean (0 errors, 1600 formulas).
 - Delivered `index.html`, the 4 `source/` files, and the updated workbook to the owner, and published a live phone/web preview as an Artifact (barcode scanning won't load there — unpkg is blocked by the preview's sandbox — but everything else works; it works fully when the owner opens the real `index.html`).
 - Updated `PROJECT_STATE.md` and `apps-script/SHEETS-SCHEMA.md` to describe the flag, the real catalog, and the future-pricing pattern.
+- Owner said the store also sells grocery + kitchen items and asked for more category icons. Expanded `CATICON`/`CATCODE` (in `index.html` and `source/app.js`) from 11 to 25 categories: added Produce, Frozen, Spices & Seasoning, Snacks, Tea & Coffee, Pasta & Noodles, Eggs, Nuts & Dried Fruits, Condiments & Sauces, Seafood, Household & Cleaning, Kitchenware & Cookware, Personal Care, and Paper & Disposables (each with an emoji + 2 colors + a 3-letter SKU code), and gave the 4 categories that already had an icon but no SKU code (Sweets, Dairy, Meat, Bakery) a proper code too. Any category name still not in the list falls back to the existing generic 📦 box icon — that fallback behavior itself was not changed. Verified with `node --check` and a headless-browser reload (25/25 categories resolve, `SHOW_PRICING` still false, no new console errors). Republished the Artifact preview with the same changes.
 
 ## In progress
 
