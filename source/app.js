@@ -1986,24 +1986,4 @@ document.addEventListener('keydown',function(e){
 });
 setupFilters('stk');setupFilters('mv');
 wireCatBar('stk',renderStock);wireCatBar('mv',renderMove);
-function wireFilterToggle(prefix,filterIds){
-  var btn=document.getElementById(prefix+'-filtbtn'),panel=document.getElementById(prefix+'-filterpanel');
-  if(!btn||!panel)return;
-  btn.addEventListener('click',function(){
-    panel.hidden=!panel.hidden;
-    btn.setAttribute('aria-expanded',String(!panel.hidden));
-    btn.classList.toggle('on',!panel.hidden);
-  });
-  function updateBadge(){
-    var n=0;
-    filterIds.forEach(function(id){var el=document.getElementById(id);if(el&&el.value)n++;});
-    var badge=document.getElementById(prefix+'-filtbadge');
-    if(!badge)return;
-    if(n>0){badge.hidden=false;badge.textContent=n;}else{badge.hidden=true;}
-  }
-  filterIds.forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('change',updateBadge);});
-  updateBadge();
-}
-wireFilterToggle('hs',['hs-type','hs-cust','hs-from','hs-to','hs-product','hs-brand']);
-wireFilterToggle('rc',['rc-cat','rc-brand']);
 kpis();drawBasket();

@@ -180,11 +180,8 @@
           <div class="searchrow" style="margin-top:8px">
             <input class="inp" id="rc-q" placeholder="Search name, SKU or brand">
             <button class="scanbtn" onclick="openScan('rc')">Scan</button>
-            <button class="filtbtn" id="rc-filtbtn" type="button" aria-expanded="false" aria-controls="rc-filterpanel" aria-label="Filters"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><line x1="3" y1="6" x2="21" y2="6"/><circle cx="9" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="3" y1="12" x2="21" y2="12"/><circle cx="15" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg><span class="filtbadge" id="rc-filtbadge" hidden>0</span></button>
           </div>
-          <div class="filterpanel" id="rc-filterpanel" hidden>
-            <div class="frow"><select id="rc-cat"></select><select id="rc-brand"></select></div>
-          </div>
+          <div class="frow"><select id="rc-cat"></select><select id="rc-brand"></select></div>
           <div class="fcount" id="rc-count"></div>
         </div>
       </div>
@@ -232,15 +229,9 @@
 
     <div class="screen" id="s-hist">
       <div class="sticky">
-        <div class="searchrow">
-          <input class="inp" id="hs-q" placeholder="Search movement or destination">
-          <button class="filtbtn" id="hs-filtbtn" type="button" aria-expanded="false" aria-controls="hs-filterpanel" aria-label="Filters"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><line x1="3" y1="6" x2="21" y2="6"/><circle cx="9" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="3" y1="12" x2="21" y2="12"/><circle cx="15" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg><span class="filtbadge" id="hs-filtbadge" hidden>0</span></button>
-        </div>
-        <div class="filterpanel" id="hs-filterpanel" hidden>
-          <div class="frow"><select id="hs-type"></select><select id="hs-cust"></select></div>
-          <div class="frow"><input type="date" id="hs-from"><input type="date" id="hs-to"></div>
-          <div class="frow"><select id="hs-product"></select><select id="hs-brand"></select></div>
-        </div>
+        <input class="inp" id="hs-q" placeholder="Search movement or destination">
+        <div class="frow frow-4"><select id="hs-type"></select><select id="hs-cust"></select><select id="hs-product"></select><select id="hs-brand"></select></div>
+        <div class="frow"><input type="date" id="hs-from"><input type="date" id="hs-to"></div>
         <select id="hs-view" style="display:none" aria-hidden="true"><option value="doc">List every movement</option></select>
         <div class="fcount" id="hs-count"></div>
       </div>

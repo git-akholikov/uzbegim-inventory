@@ -314,21 +314,12 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:#cfccc4;border-radius:2px}
 
-/* ══════════════ collapsible "Filters" disclosure (Movement history, Receive) ══════════════
-   Search stays visible; category/brand/date/type/customer filters (the ones
-   with a real "no filter" default) collapse behind a compact icon button so
-   they don't eat rows above the list. Nothing is removed, just tucked away
-   one tap deep, with a badge so it's obvious when filters are active. */
-.filtbtn{position:relative;flex:0 0 42px;width:42px;padding:0;background:#fff;border:1px solid #e2ded6;border-radius:11px;
- display:flex;align-items:center;justify-content:center;color:#4a463f;cursor:pointer;font-size:17px}
-.filtbtn.on{background:#0F5C5C;border-color:#0F5C5C;color:#fff}
-.filtbadge{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;border-radius:8px;background:#C1622D;color:#fff;
- font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1;border:2px solid #faf9f7}
-.filtbadge[hidden]{display:none}
-.filterpanel{margin-top:8px;padding-top:8px;border-top:1px dashed #e2ded6}
-.filterpanel .frow{margin-top:6px}
-.filterpanel .frow:first-child{margin-top:0}
-.filterpanel .fg{margin-bottom:6px}
+/* ══════════════ compact 4-up filter row (Movement history) ══════════════
+   All filters stay visible (owner wants nothing hidden); this just packs
+   type/customer/product/brand into one row instead of two, sized down a
+   touch so four selects still read cleanly on a phone-width screen. */
+.frow.frow-4{gap:5px}
+.frow.frow-4 select{font-size:10px;padding:7px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ===== UI REVIEW REVISION ===== */
 :root{--teal:#0F5C5C;--teal-deep:#0a4545;--rust:#C1622D;--ink:#242927;--muted:#706f69;--line:#dedbd3;--paper:#faf9f7}
