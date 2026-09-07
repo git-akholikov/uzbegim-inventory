@@ -401,7 +401,7 @@ document.getElementById('np-add').addEventListener('click',function(){
   fill(document.getElementById('rc-cat'),uniq(PRODUCTS.map(function(x){return x.cat})),'All categories');
   refreshRcBrands();
   toast(full+' created as '+sku+(boxes?' · '+boxes+' boxes added to delivery':''));
-  previewSku(); rdraw(); kpis();
+  previewSku(); rdraw(); kpis(); drawReceive();
 });
 
 /* review step before confirming a delivery */
