@@ -58,6 +58,12 @@ Owner uploaded their own `Warehouse_Inventory_v16_1.xlsx` (a mature, pre-existin
   - Verified with Playwright: Stock/Attention labels correct (spot-checked against raw `PRODUCTS`/`HISTORY` data, including a product with zero movement ever), Attention re-sorts correctly, Stats screen renders all three velocity panels with sane bx/wk numbers at both 390px and 1440px, `node --check` passed, zero console/page errors (only the two pre-existing blocked CDN scripts), and no regressions on History/New movement/Stock.
   - Committed as `4bf9789`. Republished the Artifact preview with the same changes. (The device bridge dropped mid-task; files were verified and delivered to the owner directly, then committed once the connection came back - no data was lost, everything matched byte-for-byte.)
 
+- Owner reported a bug: adding a new product from Receive's "New product" tab, then switching back to "Existing products" to search for it, didn't show it in the list.
+  - Root cause: the `np-add` click handler pushed the new product into `PRODUCTS` and reset the category/brand filter dropdowns, but never re-rendered `#rc-list` - that only happens via `drawReceive()`, which is wired to `input`/`change` on the search box and the two filter selects. If the search box's value doesn't change (e.g. owner searched, didn't find it, switched tabs, created it, switched back without retyping), the list stayed stale.
+  - Fix: added a `drawReceive();` call to the end of the `np-add` handler, alongside the existing `previewSku(); rdraw(); kpis();` line, in both `source/app.js` and `index.html`.
+  - Verified with Playwright, reproducing the exact reported flow: searched "Zzyzx Test Cola" on Existing tab (not found), switched to New product tab, created it with 3 boxes, switched back to Existing tab without touching the search box - product now appears immediately with "on hand 0 → 3 after delivery".
+  - Committed as `80de011`. Republished the Artifact preview with the same fix.
+
 ## In progress
 
 Nothing in progress. Waiting on the owner to test the app on phone/web and report back, and to upload the workbook to Google Drive when ready.
