@@ -72,6 +72,14 @@ Owner uploaded their own `Warehouse_Inventory_v16_1.xlsx` (a mature, pre-existin
   - Verified with Playwright end to end at phone width: search->select->add, search-miss->create->add, re-select->update, then a full review+confirm that checks `PRODUCTS.boxes` actually updated afterward (36->41 and 0->7 in the test run). No new console/page errors (same two pre-existing blocked-CDN messages as always). Spot-checked at desktop width too - the two-box layout reads fine there; the existing basket-dock desktop side-panel positioning is unchanged (separate follow-up, see below).
   - Committed as `0704901`. Republished the Artifact preview with the same redesign. (Built and Playwright-tested in the cloud workspace against a bundled test copy while the device bridge was briefly down mid-task, delivered to the owner directly, then written to the repo and committed once the connection came back - verified byte-for-byte unchanged in between, nothing lost.)
 
+- Owner asked if the basket (what's been added so far) could show in more detail on a computer, since phone screens have no room but computers do - for both Receive and New movement.
+  - Turned out the CSS scaffolding for this already existed from an earlier revision pass (`.bb-lines`/`.bline` styles, and the dock already floats as a side panel at 700px+) but nothing ever rendered a line list into it, and `#s-receive` wasn't wired into the same grid layout `#s-move` uses to reserve room for that panel - so on Receive specifically, the dock was visually overlapping the search/detail boxes at desktop widths even before this change.
+  - Added the actual line list: `drawBasket()` and `rdraw()` now populate `#bb-lines`/`#rb-lines` with one row per item (name, qty, an `x` remove button); added `rdrop(sku)` mirroring the existing `drop(sku)`.
+  - `.bb-lines` is `display:none` by default and only turned on at 700px+ (the same breakpoint every other desktop-only touch in this app already uses), so phone keeps exactly the compact "N products / M boxes / Review" bar it always had.
+  - Gave `#s-receive` the same grid treatment `#s-move` already had at 700/1100px, and dropped it out of the `#s-review,#s-detail{max-width:640px;margin:0 auto}` centered rule it was incorrectly still part of - that's what fixes the overlap.
+  - Verified with Playwright: hidden on phone (390px) for both screens, visible with correct itemized contents on desktop (1280px) for both, remove button works on both, no console/page errors, no visual overlap (screenshot-checked).
+  - Committed as `9c29343`. Republished the Artifact preview with the same change.
+
 ## In progress
 
 Nothing in progress. Waiting on the owner to test the app on phone/web and report back, and to upload the workbook to Google Drive when ready.
