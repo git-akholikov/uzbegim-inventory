@@ -322,6 +322,22 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:#cfccc4;border-radius:2px}
 
+/* ══════════════ collapsible "Filters" disclosure (Movement history, Receive) ══════════════
+   Search stays visible; category/brand/date/type/customer filters (the ones
+   with a real "no filter" default) collapse behind a compact icon button so
+   they don't eat rows above the list. Nothing is removed, just tucked away
+   one tap deep, with a badge so it's obvious when filters are active. */
+.filtbtn{position:relative;flex:0 0 42px;width:42px;padding:0;background:#fff;border:1px solid #e2ded6;border-radius:11px;
+ display:flex;align-items:center;justify-content:center;color:#4a463f;cursor:pointer;font-size:17px}
+.filtbtn.on{background:#0F5C5C;border-color:#0F5C5C;color:#fff}
+.filtbadge{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;border-radius:8px;background:#C1622D;color:#fff;
+ font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1;border:2px solid #faf9f7}
+.filtbadge[hidden]{display:none}
+.filterpanel{margin-top:8px;padding-top:8px;border-top:1px dashed #e2ded6}
+.filterpanel .frow{margin-top:6px}
+.filterpanel .frow:first-child{margin-top:0}
+.filterpanel .fg{margin-bottom:6px}
+
 /* ===== UI REVIEW REVISION ===== */
 :root{--teal:#0F5C5C;--teal-deep:#0a4545;--rust:#C1622D;--ink:#242927;--muted:#706f69;--line:#dedbd3;--paper:#faf9f7}
 .hero-person{display:flex;align-items:center;gap:9px;margin-top:1px;position:relative;z-index:2}
@@ -618,10 +634,18 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
           <button class="tab" data-rt="new">New product</button>
         </div>
         <div id="rc-existing">
-          <div class="fg" style="margin-bottom:7px"><label class="lab">Supplier</label><select class="ctrl" id="rc-sup"></select></div>
-          <div class="fg" style="margin-bottom:7px"><label class="lab">Delivery note number</label><input class="ctrl" id="rc-ref" placeholder="Optional"></div>
-          <div class="searchrow"><input class="inp" id="rc-q" placeholder="Search name, SKU or brand"><button class="scanbtn" onclick="openScan('rc')">Scan</button></div>
-          <div class="frow"><select id="rc-cat"></select><select id="rc-brand"></select></div>
+          <div class="frow" style="margin-top:0">
+            <div style="flex:1"><label class="lab">Supplier</label><select class="ctrl" id="rc-sup"></select></div>
+            <div style="flex:1"><label class="lab">Delivery note number</label><input class="ctrl" id="rc-ref" placeholder="Optional"></div>
+          </div>
+          <div class="searchrow" style="margin-top:8px">
+            <input class="inp" id="rc-q" placeholder="Search name, SKU or brand">
+            <button class="scanbtn" onclick="openScan('rc')">Scan</button>
+            <button class="filtbtn" id="rc-filtbtn" type="button" aria-expanded="false" aria-controls="rc-filterpanel" aria-label="Filters"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><line x1="3" y1="6" x2="21" y2="6"/><circle cx="9" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="3" y1="12" x2="21" y2="12"/><circle cx="15" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg><span class="filtbadge" id="rc-filtbadge" hidden>0</span></button>
+          </div>
+          <div class="filterpanel" id="rc-filterpanel" hidden>
+            <div class="frow"><select id="rc-cat"></select><select id="rc-brand"></select></div>
+          </div>
           <div class="fcount" id="rc-count"></div>
         </div>
       </div>
@@ -669,10 +693,15 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 
     <div class="screen" id="s-hist">
       <div class="sticky">
-        <input class="inp" id="hs-q" placeholder="Search movement or destination">
-        <div class="frow"><select id="hs-type"></select><select id="hs-cust"></select></div>
-        <div class="frow"><input type="date" id="hs-from"><input type="date" id="hs-to"></div>
-        <div class="frow"><select id="hs-product"></select><select id="hs-brand"></select></div>
+        <div class="searchrow">
+          <input class="inp" id="hs-q" placeholder="Search movement or destination">
+          <button class="filtbtn" id="hs-filtbtn" type="button" aria-expanded="false" aria-controls="hs-filterpanel" aria-label="Filters"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><line x1="3" y1="6" x2="21" y2="6"/><circle cx="9" cy="6" r="2.2" fill="currentColor" stroke="none"/><line x1="3" y1="12" x2="21" y2="12"/><circle cx="15" cy="12" r="2.2" fill="currentColor" stroke="none"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg><span class="filtbadge" id="hs-filtbadge" hidden>0</span></button>
+        </div>
+        <div class="filterpanel" id="hs-filterpanel" hidden>
+          <div class="frow"><select id="hs-type"></select><select id="hs-cust"></select></div>
+          <div class="frow"><input type="date" id="hs-from"><input type="date" id="hs-to"></div>
+          <div class="frow"><select id="hs-product"></select><select id="hs-brand"></select></div>
+        </div>
         <select id="hs-view" style="display:none" aria-hidden="true"><option value="doc">List every movement</option></select>
         <div class="fcount" id="hs-count"></div>
       </div>
@@ -2900,6 +2929,26 @@ document.addEventListener('keydown',function(e){
 });
 setupFilters('stk');setupFilters('mv');
 wireCatBar('stk',renderStock);wireCatBar('mv',renderMove);
+function wireFilterToggle(prefix,filterIds){
+  var btn=document.getElementById(prefix+'-filtbtn'),panel=document.getElementById(prefix+'-filterpanel');
+  if(!btn||!panel)return;
+  btn.addEventListener('click',function(){
+    panel.hidden=!panel.hidden;
+    btn.setAttribute('aria-expanded',String(!panel.hidden));
+    btn.classList.toggle('on',!panel.hidden);
+  });
+  function updateBadge(){
+    var n=0;
+    filterIds.forEach(function(id){var el=document.getElementById(id);if(el&&el.value)n++;});
+    var badge=document.getElementById(prefix+'-filtbadge');
+    if(!badge)return;
+    if(n>0){badge.hidden=false;badge.textContent=n;}else{badge.hidden=true;}
+  }
+  filterIds.forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('change',updateBadge);});
+  updateBadge();
+}
+wireFilterToggle('hs',['hs-type','hs-cust','hs-from','hs-to','hs-product','hs-brand']);
+wireFilterToggle('rc',['rc-cat','rc-brand']);
 kpis();drawBasket();
 </script>
 </body>
