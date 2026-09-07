@@ -202,9 +202,19 @@
         <div class="stat">
           <div class="sechead" style="margin-top:0">Product information</div>
           <div class="fg"><label class="lab">Category</label>
-            <div class="searchrow"><select class="ctrl" id="np-cat"></select><button class="scanbtn" onclick="addCategory()">+ New</button></div></div>
+            <div class="searchrow"><select class="ctrl" id="np-cat"></select><button class="scanbtn" onclick="showInlineAdd('np-cat')">+ New</button></div>
+            <div class="searchrow" id="np-cat-newrow" style="display:none;margin-top:6px">
+              <input class="ctrl" id="np-cat-newinput" placeholder="New category name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-cat','cat');}">
+              <button class="scanbtn" onclick="confirmInlineAdd('np-cat','cat')">Add</button>
+              <button class="scanbtn" onclick="cancelInlineAdd('np-cat')">Cancel</button>
+            </div></div>
           <div class="fg"><label class="lab">Brand</label>
-            <div class="searchrow"><select class="ctrl" id="np-brand"></select><button class="scanbtn" onclick="addBrand()">+ New</button></div></div>
+            <div class="searchrow"><select class="ctrl" id="np-brand"></select><button class="scanbtn" onclick="showInlineAdd('np-brand')">+ New</button></div>
+            <div class="searchrow" id="np-brand-newrow" style="display:none;margin-top:6px">
+              <input class="ctrl" id="np-brand-newinput" placeholder="New brand name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-brand','brand');}">
+              <button class="scanbtn" onclick="confirmInlineAdd('np-brand','brand')">Add</button>
+              <button class="scanbtn" onclick="cancelInlineAdd('np-brand')">Cancel</button>
+            </div></div>
           <div class="fg"><label class="lab">Product name</label><input class="ctrl" id="np-name" placeholder="e.g. Moxito"></div>
           <div class="fg"><label class="lab">Flavour or size <span style="color:#8a8780;font-weight:600">(optional)</span></label><input class="ctrl" id="np-flavor" placeholder="e.g. Lime, 1L, 5kg"></div>
           <div class="frow" style="margin-bottom:10px">
@@ -379,9 +389,19 @@
     <div class="screen" id="s-prodedit">
       <div class="sechead" id="pe-head">New product</div>
       <div class="fg"><label class="lab">Category <span class="req">required</span></label>
-        <div class="searchrow"><select class="ctrl" id="pe-cat"></select><button class="scanbtn" onclick="addCatTo('pe-cat')">+ New</button></div></div>
+        <div class="searchrow"><select class="ctrl" id="pe-cat"></select><button class="scanbtn" onclick="showInlineAdd('pe-cat')">+ New</button></div>
+        <div class="searchrow" id="pe-cat-newrow" style="display:none;margin-top:6px">
+          <input class="ctrl" id="pe-cat-newinput" placeholder="New category name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-cat','cat');}">
+          <button class="scanbtn" onclick="confirmInlineAdd('pe-cat','cat')">Add</button>
+          <button class="scanbtn" onclick="cancelInlineAdd('pe-cat')">Cancel</button>
+        </div></div>
       <div class="fg"><label class="lab">Brand <span class="req">required</span></label>
-        <div class="searchrow"><select class="ctrl" id="pe-brand"></select><button class="scanbtn" onclick="addBrandTo('pe-brand')">+ New</button></div></div>
+        <div class="searchrow"><select class="ctrl" id="pe-brand"></select><button class="scanbtn" onclick="showInlineAdd('pe-brand')">+ New</button></div>
+        <div class="searchrow" id="pe-brand-newrow" style="display:none;margin-top:6px">
+          <input class="ctrl" id="pe-brand-newinput" placeholder="New brand name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-brand','brand');}">
+          <button class="scanbtn" onclick="confirmInlineAdd('pe-brand','brand')">Add</button>
+          <button class="scanbtn" onclick="cancelInlineAdd('pe-brand')">Cancel</button>
+        </div></div>
       <div class="fg"><label class="lab">Product name <span class="req">required</span></label><input class="ctrl" id="pe-name" placeholder="e.g. Moxito"></div>
       <div class="fg"><label class="lab">Flavour or size</label><input class="ctrl" id="pe-flavor" placeholder="e.g. Lime, 1L, 5kg"></div>
       <div class="frow" style="margin-bottom:11px">
