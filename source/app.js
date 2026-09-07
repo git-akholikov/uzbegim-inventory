@@ -1184,6 +1184,10 @@ function drawBasket(){
   document.getElementById('bb-n').textContent=a.length?(a.length+(a.length===1?' product':' products')):'Basket empty';
   document.getElementById('bb-b').textContent=bx+' boxes';
   document.getElementById('bb-go').disabled=a.length===0;
+  var lines=document.getElementById('bb-lines');
+  if(lines)lines.innerHTML=a.map(function(it){
+    return '<div class="bline"><span>'+it.name+' &middot; '+it.qty+' box'+(it.qty===1?'':'es')+'</span><button onclick="drop(\''+it.sku+'\')" aria-label="Remove">&times;</button></div>';
+  }).join('');
   var d=document.getElementById('hi-basket');
   if(d){d.textContent=bx;d.style.display=a.length?'flex':'none';}
 }
@@ -1551,12 +1555,17 @@ function rupdateRow(sku){
   var lab=document.getElementById('rrem-'+sku);
   if(lab)lab.innerHTML='on hand '+p.boxes+(inb?' &rarr; <b>'+(p.boxes+inb)+'</b> after delivery':'');
 }
+function rdrop(sku){delete rbasket[sku];rupdateRow(sku);rdraw();}
 function rdraw(){
   var a=[];for(var k in rbasket)a.push(rbasket[k]);
   var bx=0;for(var i=0;i<a.length;i++)bx+=a[i].qty;
   document.getElementById('rb-n').textContent=a.length?(a.length+(a.length===1?' product':' products')):'Nothing added';
   document.getElementById('rb-b').textContent=bx+' boxes';
   document.getElementById('rb-go').disabled=a.length===0;
+  var lines=document.getElementById('rb-lines');
+  if(lines)lines.innerHTML=a.map(function(it){
+    return '<div class="bline"><span>'+it.name+' &middot; '+it.qty+' box'+(it.qty===1?'':'es')+'</span><button onclick="rdrop(\''+it.sku+'\')" aria-label="Remove">&times;</button></div>';
+  }).join('');
 }
 document.getElementById('rc-q').addEventListener('input',function(){ if(rcMode==='search')drawReceive(); });
 

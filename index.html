@@ -92,7 +92,7 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .dock.on{display:block}
 .bb-top{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;margin-bottom:7px}
 .bb-badge{background:#0F5C5C;color:#fff;padding:3px 10px;border-radius:20px;font-size:10.5px;font-weight:800}
-.bb-lines{max-height:64px;overflow-y:auto;margin-bottom:7px}
+.bb-lines{display:none;max-height:64px;overflow-y:auto;margin-bottom:7px}
 .bline{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px;font-weight:600;border-bottom:1px solid #eeebe5}
 .bline button{background:none;border:none;color:#992d2d;font-size:13px;font-weight:800;cursor:pointer;padding:0 4px}
 .btn{background:#C1622D;color:#fff;border:none;padding:13px;border-radius:12px;font-weight:800;width:100%;cursor:pointer;font-size:13.5px;font-family:inherit;box-shadow:0 2px 8px rgba(193,98,45,.25)}
@@ -191,7 +191,7 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 
 /* ---------- TABLET: 700px and wider ---------- */
 @media (min-width: 700px){
-  #s-review,#s-receive,#s-detail{max-width:640px;margin:0 auto;width:100%}
+  #s-review,#s-detail{max-width:640px;margin:0 auto;width:100%}
   body{padding:20px;background:#e9e7e2}
   .phone{max-width:860px;height:calc(100vh - 40px);border-radius:20px;
          box-shadow:0 14px 44px rgba(0,0,0,.16)}
@@ -218,11 +218,15 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
   #s-move.on{display:grid;grid-template-columns:1fr 250px;gap:16px;align-content:start}
   #s-move .sticky{grid-column:1 / -1}
   #s-move .list{grid-column:1}
+  #s-receive.on{display:grid;grid-template-columns:1fr 250px;gap:16px;align-content:start}
+  #s-receive .sticky{grid-column:1 / -1}
+  #s-receive #rc-list,#s-receive #rc-existing-detail,#s-receive #rc-new{grid-column:1}
   .dock.on{position:absolute;right:22px;top:96px;width:250px;bottom:auto;
            border:1px solid #e8e4dc;border-radius:14px;padding:14px;
            box-shadow:0 4px 16px rgba(0,0,0,.08)}
   .bb-top{flex-direction:column;align-items:flex-start;gap:7px;margin-bottom:11px}
   .bb-badge{font-size:12px;padding:4px 12px}
+  .bb-lines{display:block;max-height:200px}
 }
 
 /* ---------- DESKTOP: 1100px and wider ---------- */
@@ -245,6 +249,7 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
   .c-name{font-size:13px}
 
   #s-move.on{grid-template-columns:1fr 290px;gap:20px}
+  #s-receive.on{grid-template-columns:1fr 290px;gap:20px}
   .dock.on{right:30px;top:104px;width:290px}
   .bb-lines{max-height:280px}
 
@@ -363,6 +368,9 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
   #s-move.on{grid-template-columns:minmax(0,1fr) 250px;grid-template-rows:auto 1fr;gap:14px 16px}
   #s-move .sticky{grid-column:1;grid-row:1}
   #s-move #mv-list{grid-column:1;grid-row:2;grid-template-columns:1fr}
+  #s-receive.on{grid-template-columns:minmax(0,1fr) 250px;grid-template-rows:auto 1fr;gap:14px 16px}
+  #s-receive .sticky{grid-column:1;grid-row:1}
+  #s-receive #rc-list,#s-receive #rc-existing-detail,#s-receive #rc-new{grid-column:1;grid-row:2}
   .dock.on{top:96px;max-height:calc(100% - 122px);overflow-y:auto}
   .menu .mbtn,.menu .mbtn.wide{min-height:118px}
 }
@@ -372,6 +380,7 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
   #s-move #mv-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   #s-move #mv-list .card{min-height:94px;padding:15px 16px}
   #s-move #mv-list .c-info{padding-right:8px}
+  #s-receive.on{grid-template-columns:minmax(0,1fr) 290px;gap:16px 20px}
   .dock.on{top:104px;max-height:calc(100% - 134px)}
   .menu .mbtn,.menu .mbtn.wide{min-height:108px}
 }
@@ -927,10 +936,12 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
   </div>
   <div class="dock" id="rdock">
     <div class="bb-top"><span id="rb-n">Nothing added</span><span class="bb-badge" id="rb-b">0 boxes</span></div>
+    <div class="bb-lines" id="rb-lines"></div>
     <button class="btn" id="rb-go" disabled>Review delivery</button>
   </div>
   <div class="dock" id="dock">
     <div class="bb-top"><span id="bb-n">Basket empty</span><span class="bb-badge" id="bb-b">0 boxes</span></div>
+    <div class="bb-lines" id="bb-lines"></div>
     <button class="btn" id="bb-go" disabled>Review basket</button>
   </div>
 </div>
@@ -2125,6 +2136,10 @@ function drawBasket(){
   document.getElementById('bb-n').textContent=a.length?(a.length+(a.length===1?' product':' products')):'Basket empty';
   document.getElementById('bb-b').textContent=bx+' boxes';
   document.getElementById('bb-go').disabled=a.length===0;
+  var lines=document.getElementById('bb-lines');
+  if(lines)lines.innerHTML=a.map(function(it){
+    return '<div class="bline"><span>'+it.name+' &middot; '+it.qty+' box'+(it.qty===1?'':'es')+'</span><button onclick="drop(\''+it.sku+'\')" aria-label="Remove">&times;</button></div>';
+  }).join('');
   var d=document.getElementById('hi-basket');
   if(d){d.textContent=bx;d.style.display=a.length?'flex':'none';}
 }
@@ -2492,12 +2507,17 @@ function rupdateRow(sku){
   var lab=document.getElementById('rrem-'+sku);
   if(lab)lab.innerHTML='on hand '+p.boxes+(inb?' &rarr; <b>'+(p.boxes+inb)+'</b> after delivery':'');
 }
+function rdrop(sku){delete rbasket[sku];rupdateRow(sku);rdraw();}
 function rdraw(){
   var a=[];for(var k in rbasket)a.push(rbasket[k]);
   var bx=0;for(var i=0;i<a.length;i++)bx+=a[i].qty;
   document.getElementById('rb-n').textContent=a.length?(a.length+(a.length===1?' product':' products')):'Nothing added';
   document.getElementById('rb-b').textContent=bx+' boxes';
   document.getElementById('rb-go').disabled=a.length===0;
+  var lines=document.getElementById('rb-lines');
+  if(lines)lines.innerHTML=a.map(function(it){
+    return '<div class="bline"><span>'+it.name+' &middot; '+it.qty+' box'+(it.qty===1?'':'es')+'</span><button onclick="rdrop(\''+it.sku+'\')" aria-label="Remove">&times;</button></div>';
+  }).join('');
 }
 document.getElementById('rc-q').addEventListener('input',function(){ if(rcMode==='search')drawReceive(); });
 
