@@ -25,6 +25,87 @@ var ME={name:'Abdu',role:'manager',email:''};
 
 PRODUCTS.forEach(function(p,i){p.barcode=(i%10<7)?('20'+String(480000+i*137).slice(0,7)):'';});
 var OWNER_EMAIL='abduraufkholikov@gmail.com';
+
+/* ══════════ GOOGLE SHEETS SYNC ══════════
+   The app works fully offline on the sample data above. When a Sheets web
+   app link and a staff email are set in Settings, it also syncs real stock
+   from a Google Sheet and posts every receiving / stock-out / transfer /
+   stock-count movement there. See apps-script/DEPLOYMENT.md in the repo. */
+var SHEETS_API_URL=localStorage.getItem('uzb_api_url')||'';
+var SHEETS_STAFF_EMAIL=localStorage.getItem('uzb_staff_email')||'';
+var lastSyncOk=false,lastSyncErr='';
+
+function sheetsConfigured(){return !!SHEETS_API_URL;}
+
+function applyServerProducts(list){
+  if(!list)return;
+  var bySku={};PRODUCTS.forEach(function(p){bySku[p.sku]=p;});
+  list.forEach(function(sp){
+    var existing=bySku[sp.sku];
+    if(existing){
+      existing.brand=sp.brand;existing.name=sp.name;existing.cat=sp.cat;existing.unit=sp.unit;
+      existing.upb=sp.upb;existing.min=sp.min;existing.boxes=sp.boxes;
+      delete bySku[sp.sku];
+    } else {
+      sp.barcode='';sp.price=0;sp.cost=0;PRODUCTS.push(sp);
+    }
+  });
+  Object.keys(bySku).forEach(function(sku){
+    var idx=-1;for(var i=0;i<PRODUCTS.length;i++)if(PRODUCTS[i].sku===sku){idx=i;break;}
+    if(idx>-1)PRODUCTS.splice(idx,1);
+  });
+}
+function applyServerCustomers(list){
+  if(!list)return;
+  list.forEach(function(sc){
+    var c=null;
+    for(var i=0;i<CUSTOMERS.length;i++)if(CUSTOMERS[i].id===sc.id||CUSTOMERS[i].name===sc.name){c=CUSTOMERS[i];break;}
+    var kind=(sc.type==='Own Market')?'transfer':'invoice';
+    if(c){c.id=sc.id;c.key=sc.id;c.name=sc.name;c.kind=kind;}
+    else CUSTOMERS.push({key:sc.id,id:sc.id,name:sc.name,kind:kind,phone:'',email:'',contact:'',address:'',city:'',state:'',zip:'',terms:'',notes:''});
+  });
+}
+function applyServerSuppliers(list){
+  if(!list)return;
+  list.forEach(function(ss){
+    var s=findSup(ss.name);
+    if(s)s.id=ss.id;
+    else SUPPLIERS.push({id:ss.id,name:ss.name,phone:'',email:'',contact:'',address:'',city:'',state:'',zip:'',terms:'',notes:''});
+  });
+}
+function supplierIdByName(name){var s=findSup(name);return(s&&s.id)?s.id:'';}
+
+function syncFromServer(cb){
+  if(!sheetsConfigured()){if(cb)cb(false,'not configured');return;}
+  fetch(SHEETS_API_URL).then(function(r){return r.json();}).then(function(res){
+    if(!res||res.ok===false){lastSyncOk=false;lastSyncErr=(res&&res.error)||'sync failed';if(cb)cb(false,lastSyncErr);return;}
+    applyServerProducts(res.products);
+    applyServerCustomers(res.customers);
+    applyServerSuppliers(res.suppliers);
+    lastSyncOk=true;lastSyncErr='';
+    kpis();
+    if(cb)cb(true);
+  }).catch(function(err){lastSyncOk=false;lastSyncErr=String(err);if(cb)cb(false,lastSyncErr);});
+}
+
+function postMovements(type,lines,extra,cb){
+  extra=extra||{};
+  if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
+  if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
+  var movements=lines.map(function(l){
+    return{type:type,productId:l.sku,qty:(type==='Stock Count Adjustment')?l.delta:l.boxes,
+      customerId:extra.customerId||'',supplierId:extra.supplierId||'',notes:extra.notes||''};
+  });
+  fetch(SHEETS_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:'addMovements',staffEmail:SHEETS_STAFF_EMAIL,movements:movements})})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if(!res||res.ok===false){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,res&&res.error);return;}
+      applyServerProducts(res.products);
+      if(cb)cb(true);
+    })
+    .catch(function(err){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,String(err));});
+}
 /* ── visual identity for categories and brands ── */
 var CATICON={
  'Beverages':      ['<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M6 7h11l-1.2 12.5a2 2 0 0 1-2 1.5H9.2a2 2 0 0 1-2-1.5L6 7z"/><path d="M15 7V3l2-1"/></svg>','#e3ecf5','#1D4E78'],
@@ -435,6 +516,8 @@ document.getElementById('rv2-go').addEventListener('click',function(){
     who:(ME&&ME.name)?ME.name:'Abdu',ref:ref,notes:notes,lines:lines};
   HISTORY.unshift(rec); lastMovement=rec;
   a.forEach(function(it){ var p=prod(it.sku); if(p)p.boxes+=it.qty; });
+  postMovements('Receiving',a.map(function(it){return{sku:it.sku,boxes:it.qty};}),
+    {supplierId:supplierIdByName(sup),notes:'Ref '+num+(ref?(' · PO '+ref):'')});
   document.getElementById('cf-id').textContent=num+'  |  '+sup;
   document.getElementById('cf-sum').textContent=bx+' boxes  |  '+un+' units received';
   document.getElementById('cf-acts').style.display='none';
@@ -627,6 +710,17 @@ function renderSettings(){
   document.getElementById('se2-target').value=String(SETTINGS.target);
   document.getElementById('se2-email').value=SETTINGS.ownerEmail;
   document.getElementById('se2-when').value=SETTINGS.emailWhen;
+  document.getElementById('se2-api').value=SHEETS_API_URL;
+  document.getElementById('se2-staffemail').value=SHEETS_STAFF_EMAIL;
+  drawSyncStatus();
+}
+function drawSyncStatus(){
+  var el=document.getElementById('se2-syncstatus');
+  if(!el)return;
+  if(!sheetsConfigured())el.textContent='Not synced yet — add the Sheets link above';
+  else if(lastSyncOk)el.textContent='Synced with Google Sheets';
+  else if(lastSyncErr)el.textContent='Sync failed: '+lastSyncErr;
+  else el.textContent='Not synced yet';
 }
 document.getElementById('se2-save').addEventListener('click',function(){
   SETTINGS.bizName=document.getElementById('se2-name').value.trim();
@@ -638,8 +732,22 @@ document.getElementById('se2-save').addEventListener('click',function(){
   SETTINGS.ownerEmail=document.getElementById('se2-email').value.trim();
   SETTINGS.emailWhen=document.getElementById('se2-when').value;
   OWNER_EMAIL=SETTINGS.ownerEmail;
+  SHEETS_API_URL=document.getElementById('se2-api').value.trim();
+  SHEETS_STAFF_EMAIL=document.getElementById('se2-staffemail').value.trim();
+  try{localStorage.setItem('uzb_api_url',SHEETS_API_URL);localStorage.setItem('uzb_staff_email',SHEETS_STAFF_EMAIL);}catch(e){}
+  ME.email=SHEETS_STAFF_EMAIL;
   kpis(); toast('Settings saved');
+  if(sheetsConfigured())syncFromServer(function(){drawSyncStatus();});
   go('menu');
+});
+document.getElementById('se2-syncnow').addEventListener('click',function(){
+  SHEETS_API_URL=document.getElementById('se2-api').value.trim();
+  if(!sheetsConfigured()){toast('Add the Sheets link first');return;}
+  toast('Syncing…');
+  syncFromServer(function(ok,err){
+    drawSyncStatus();
+    toast(ok?'Synced with Google Sheets':('Sync failed: '+err));
+  });
 });
 
 /* ══════════ MANAGER: STOCK COUNT ══════════ */
@@ -717,6 +825,7 @@ document.getElementById('cb-go').addEventListener('click',function(){
     who:(ME&&ME.name)?ME.name:'Abdu',ref:'',notes:'Physical count adjustment',lines:lines};
   HISTORY.unshift(rec); lastMovement=rec;
   lines.forEach(function(l){ prod(l.sku).boxes+=l.delta; });
+  postMovements('Stock Count Adjustment',lines,{notes:'Ref '+num});
   counts={};
   document.getElementById('cf-id').textContent=num+'  |  Stock count';
   document.getElementById('cf-sum').textContent=lines.length+' product'+(lines.length===1?'':'s')+' adjusted  |  '+bx+' boxes';
@@ -1225,6 +1334,8 @@ document.getElementById('rv-go').addEventListener('click',function(){
   var rec={id:num,type:c.kind,cust:c.name,date:TODAY,time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),who:'Abdu',ref:'',notes:document.getElementById('rv-notes').value,lines:lines};
   HISTORY.unshift(rec);lastMovement=rec;
   for(var j=0;j<a.length;j++)prod(a[j].sku).boxes-=a[j].qty;
+  postMovements(c.kind==='transfer'?'Internal Transfer':'Customer Stock-Out',lines,
+    {customerId:c.id||'',notes:'Ref '+num});
   document.getElementById('cf-id').textContent=num+'  |  '+c.name;
   document.getElementById('cf-sum').textContent=bx+' boxes  |  '+un+' units moved out';
   document.getElementById('cf-acts').style.display='none';
@@ -1518,18 +1629,6 @@ document.getElementById('rc-ed-commit').addEventListener('click',function(){
 });
 document.getElementById('rc-ed-cancel').addEventListener('click',rcReset);
 document.getElementById('rc-new-cancel').addEventListener('click',rcReset);
-function npPreview(){
-  var el=document.getElementById('np-onhand'); if(!el)return;
-  var n=parseInt(document.getElementById('np-boxes').value,10)||0;
-  el.innerHTML='New product &middot; not in stock yet'+(n>0?' &rarr; <b>'+n+'</b> after delivery':'');
-}
-function npBump(d){
-  var el=document.getElementById('np-boxes');
-  var v=(parseInt(el.value,10)||0)+d;
-  if(v<0)v=0;
-  el.value=v||'';
-  npPreview();
-}
 function rcPickNew(){
   rcMode='new'; rcActiveSku=null;
   document.getElementById('rc-searchwrap').style.display='none';
@@ -1538,7 +1637,6 @@ function rcPickNew(){
   fillNewProduct();
   document.getElementById('np-name').value=document.getElementById('rc-q').value.trim();
   document.getElementById('np-boxes').value='';
-  npPreview();
   document.getElementById('rc-new').style.display='block';
 }
 var RCOST={};
@@ -1865,3 +1963,4 @@ document.addEventListener('keydown',function(e){
 setupFilters('stk');setupFilters('mv');
 wireCatBar('stk',renderStock);wireCatBar('mv',renderMove);
 kpis();drawBasket();
+if(sheetsConfigured())syncFromServer(function(ok,err){if(!ok)toast('Sheets sync failed — showing last-known stock');});

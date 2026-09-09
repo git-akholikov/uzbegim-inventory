@@ -1,10 +1,231 @@
 /**
- * Google Apps Script entry point for the prototype.
- * The interface currently uses sample browser data; Google Sheets persistence
- * is the next development milestone.
+ * Uzbegim Warehouse — Sheets backend (v1, inventory only).
+ *
+ * This script must be BOUND to the Google Sheet built from
+ * apps-script/uzbegim-warehouse-inventory.xlsx (Extensions > Apps Script,
+ * opened from inside that Sheet) so SpreadsheetApp.getActiveSpreadsheet()
+ * resolves automatically — no Sheet ID to configure. See DEPLOYMENT.md.
+ *
+ * Deployed as a Web App (Execute as: Me, Who has access: Anyone), it serves
+ * as a small JSON API the app.js frontend calls with fetch():
+ *   GET  ?               -> current products, live stock, customers, suppliers, staff
+ *   POST {action:...}    -> append movement(s) / add or edit a product
+ *
+ * Auth model: this is a small internal tool for 2-3 known staff, not a
+ * public system. Because the web app runs for "Anyone" (no Google sign-in
+ * prompt on the phone), Session.getActiveUser() is not reliable here, so
+ * every write is authorized by checking the staffEmail the client sends
+ * against the Staff tab (must exist there with Active = Y). Do not widen
+ * this app's audience without adding real Google sign-in.
+ *
+ * POST requests must use Content-Type: text/plain (not application/json).
+ * That keeps them a CORS "simple request" so the browser skips a preflight
+ * OPTIONS call, which this script does not implement. The body is still a
+ * JSON string — read via e.postData.contents and JSON.parse().
  */
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Uzbegim Warehouse')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+
+var TAB = {
+  staff: 'Staff', products: 'Products', customers: 'Customers',
+  suppliers: 'Suppliers', movements: 'Movements', stock: 'Stock'
+};
+
+function doGet(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var stockBySku = computeStockMap(ss);
+    var payload = {
+      ok: true,
+      products: readProducts(ss, stockBySku),
+      customers: readTable(ss, TAB.customers).map(function (r) {
+        return { id: r['Customer ID'], name: r['Customer Name'], type: r['Type'], active: r['Active (Y/N)'] };
+      }).filter(function (c) { return c.active === 'Y' && c.id; }),
+      suppliers: readTable(ss, TAB.suppliers).map(function (r) {
+        return { id: r['Supplier ID'], name: r['Supplier Name'], active: r['Active (Y/N)'] };
+      }).filter(function (s) { return s.active === 'Y' && s.id; }),
+      staff: readTable(ss, TAB.staff).map(function (r) {
+        return { email: r['Email (Google Account)'], name: r['Name'], role: r['Role'], active: r['Active (Y/N)'] };
+      }).filter(function (s) { return s.active === 'Y' && s.email; }),
+      generatedAt: new Date().toISOString()
+    };
+    return json(payload);
+  } catch (err) {
+    return json({ ok: false, error: String(err) }, 500);
+  }
+}
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    var body = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var staff = findActiveStaff(ss, body.staffEmail);
+    if (!staff) return json({ ok: false, error: 'Unknown or inactive staff email: ' + body.staffEmail }, 403);
+
+    if (body.action === 'addMovements') {
+      var ids = appendMovements(ss, body.movements || [], staff);
+      return json({ ok: true, ids: ids, products: readProducts(ss, computeStockMap(ss)) });
+    }
+    if (body.action === 'addProduct') {
+      var newId = appendProduct(ss, body.product);
+      return json({ ok: true, id: newId, products: readProducts(ss, computeStockMap(ss)) });
+    }
+    if (body.action === 'updateProduct') {
+      updateProduct(ss, body.product);
+      return json({ ok: true, products: readProducts(ss, computeStockMap(ss)) });
+    }
+    return json({ ok: false, error: 'Unknown action: ' + body.action }, 400);
+  } catch (err) {
+    return json({ ok: false, error: String(err) }, 500);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ───────────────── reading ───────────────── */
+
+function readTable(ss, tabName) {
+  var sh = ss.getSheetByName(tabName);
+  if (!sh) return [];
+  var values = sh.getDataRange().getValues();
+  var headers = values[0];
+  var out = [];
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    if (row.every(function (c) { return c === '' || c === null; })) continue;
+    var obj = {};
+    for (var c = 0; c < headers.length; c++) obj[headers[c]] = row[c];
+    out.push(obj);
+  }
+  return out;
+}
+
+function computeStockMap(ss) {
+  // Computed directly from the Movements ledger rather than read from the
+  // Stock tab's SUMIFS formulas: that avoids any dependency on the Stock
+  // tab's formula ranges being correct, or having recalculated in time when
+  // this reads it back right after a write. The Stock tab still works as a
+  // human-readable view inside the spreadsheet itself, but Code.gs does not
+  // rely on it.
+  var rows = readTable(ss, TAB.movements);
+  var map = {};
+  rows.forEach(function (r) {
+    var sku = r['Product ID'];
+    if (!sku) return;
+    var signed = Number(r['Signed Qty (calculated)']);
+    if (isNaN(signed)) signed = 0;
+    map[sku] = (map[sku] || 0) + signed;
+  });
+  return map;
+}
+
+function readProducts(ss, stockBySku) {
+  return readTable(ss, TAB.products)
+    .filter(function (r) { return r['Product ID'] && r['Active (Y/N)'] === 'Y'; })
+    .map(function (r) {
+      var flavor = r['Flavor / Variant'] ? (' - ' + r['Flavor / Variant']) : '';
+      return {
+        sku: r['Product ID'],
+        brand: r['Brand'] || r['Product Name'],
+        name: (r['Product Name'] || '') + flavor,
+        cat: r['Category'] || '',
+        unit: r['Unit'] || '',
+        upb: Number(r['Units per Box']) || 1,
+        min: Number(r['Min Boxes (reorder point)']) || 0,
+        boxes: stockBySku[r['Product ID']] || 0,
+        price: 0, cost: 0
+      };
+    });
+}
+
+function findActiveStaff(ss, email) {
+  if (!email) return null;
+  var rows = readTable(ss, TAB.staff);
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i]['Email (Google Account)'] === email && rows[i]['Active (Y/N)'] === 'Y') return rows[i];
+  }
+  return null;
+}
+
+/* ───────────────── writing ───────────────── */
+
+function maxIdNumber(sh, prefix) {
+  var last = sh.getLastRow();
+  var max = 0;
+  if (last > 1) {
+    var vals = sh.getRange(2, 1, last - 1, 1).getValues();
+    vals.forEach(function (v) {
+      var n = parseInt(String(v[0]).replace(prefix, ''), 10);
+      if (!isNaN(n) && n > max) max = n;
+    });
+  }
+  return max;
+}
+
+function appendMovements(ss, movements, staff) {
+  var sh = ss.getSheetByName(TAB.movements);
+  if (!sh) throw new Error('Movements tab not found');
+  var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'America/New_York', 'yyyy-MM-dd');
+  var next = maxIdNumber(sh, 'M') + 1;
+  var ids = [];
+  var rows = [];
+  movements.forEach(function (m) {
+    if (!m.productId || !m.type) return;
+    var qty = Number(m.qty) || 0;
+    var signed;
+    if (m.type === 'Stock Count Adjustment') signed = qty;
+    else if (m.type === 'Receiving') signed = Math.abs(qty);
+    else signed = -Math.abs(qty); // Customer Stock-Out, Internal Transfer
+
+    var id = 'M' + String(next).padStart(4, '0');
+    next++;
+    ids.push(id);
+    rows.push([
+      id, today, m.type, Math.abs(qty), signed, m.productId,
+      m.customerId || '', m.supplierId || '', staff['Email (Google Account)'], m.notes || ''
+    ]);
+  });
+  if (rows.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  }
+  SpreadsheetApp.flush();
+  return ids;
+}
+
+function appendProduct(ss, p) {
+  var sh = ss.getSheetByName(TAB.products);
+  if (!sh) throw new Error('Products tab not found');
+  if (!p || !p.sku) throw new Error('Missing product sku');
+  sh.appendRow([
+    p.sku, p.name || '', p.brand || '', p.flavor || '', p.unit || '',
+    p.cat || '', Number(p.upb) || 1, Number(p.min) || 0, p.supplier || '', 'Y', p.notes || ''
+  ]);
+  return p.sku;
+}
+
+function updateProduct(ss, p) {
+  var sh = ss.getSheetByName(TAB.products);
+  if (!sh) throw new Error('Products tab not found');
+  var values = sh.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (values[r][0] === p.sku) {
+      var row = r + 1;
+      if (p.name !== undefined) sh.getRange(row, 2).setValue(p.name);
+      if (p.brand !== undefined) sh.getRange(row, 3).setValue(p.brand);
+      if (p.flavor !== undefined) sh.getRange(row, 4).setValue(p.flavor);
+      if (p.unit !== undefined) sh.getRange(row, 5).setValue(p.unit);
+      if (p.cat !== undefined) sh.getRange(row, 6).setValue(p.cat);
+      if (p.upb !== undefined) sh.getRange(row, 7).setValue(Number(p.upb) || 1);
+      if (p.min !== undefined) sh.getRange(row, 8).setValue(Number(p.min) || 0);
+      return;
+    }
+  }
+  throw new Error('Product not found: ' + p.sku);
+}
+
+/* ───────────────── helpers ───────────────── */
+
+function json(obj, status) {
+  var out = ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+  return out;
 }

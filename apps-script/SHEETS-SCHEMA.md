@@ -10,6 +10,12 @@ Used to enforce roles server-side by matching `Session.getActiveUser().getEmail(
 
 Test accounts already entered: `abduraufkholikov@gmail.com` (Manager), `abduraufkholikov0@gmail.com` (Worker). Real staff (2-3 managers, 2-3 workers max) get added here before real deployment.
 
+> **Implementation note (Code.gs v1):** the deployed web app runs with
+> "Execute as: Me, Anyone can access", so `Session.getActiveUser()` is not
+> reliably populated for anonymous callers. Instead, `Code.gs` requires the
+> client to send a `staffEmail` with every write and checks it against this
+> tab (must exist, Active = Y). See the auth note at the top of `Code.gs`.
+
 ### Products
 `Product ID, Product Name, Brand, Flavor / Variant, Unit, Category, Units per Box, Min Boxes (reorder point), Supplier, Active (Y/N), Notes`
 All 91 real SKUs already loaded, pulled from the existing app's product data (brand, flavor, unit, category, units per box, current reorder minimum) plus supplier where known from the owner's own spreadsheet. Product ID is the stable key other tabs and any future Pricing tab should join on. No price or cost column, by design.
@@ -30,9 +36,20 @@ Pre-filled with the 4 real suppliers found in the owner's product data: Baraka T
 - Rows 2-92 are one `Stock Count Adjustment` per real product, dated today, carrying that product's current box count from the existing app — an opening balance so Stock doesn't start at zero. A few more example rows follow, using a real SKU/customer/supplier, clearly marked as samples.
 - No price/amount column here — see "Future pricing" below.
 
+> **Implementation note (Code.gs v1):** `appendMovements()` computes and
+> writes the numeric `Signed Qty` itself for every row it appends (per the
+> point above), it does not rely on a sheet formula for new rows.
+
 ### Stock (read-only, calculated)
 `Product ID, Product Name, Current Boxes on Hand, Min Boxes (reorder point), Status`
 `Current Boxes on Hand` is `SUMIFS` over `Movements!Signed Qty` by Product ID. `Status` is `REORDER` when qty on hand is below the product's min boxes, else `OK`. This tab should stay derived/read-only — the app never writes to it directly, only to Movements.
+
+> **Implementation note (Code.gs v1):** the backend does **not** read this
+> tab. `doGet`/`doPost` compute each product's current boxes by summing
+> `Movements!Signed Qty` directly in Apps Script (`computeStockMap()`),
+> so the numbers the app shows never depend on this tab's formulas having
+> recalculated yet. This tab is still useful as a human-readable view
+> inside the spreadsheet itself — just don't wire anything to read from it.
 
 ## Future pricing (not built now)
 
