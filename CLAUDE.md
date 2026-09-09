@@ -1,9 +1,19 @@
 # Instructions for Claude
 
-Read `START-HERE.md`, `COLLABORATION.md`, `PROJECT_STATE.md`, `CURRENT_WORK.md`, and `TASKS.md` before changing files.
+This is Abdu's warehouse inventory app for Uzbegim Food Market — a single-page
+app (`index.html`, built from the `source/` files) used by a manager and a
+couple of warehouse workers to track stock, receiving, and movements.
 
-Follow the existing inventory-only product decisions. Work from a GitHub issue, continue its existing branch or pull request, preserve unrelated work, and verify changes. Follow the mandatory continuous-checkpoint rules in `COLLABORATION.md`: update `CURRENT_WORK.md`, commit, and push after every meaningful step. Do not wait until the conversation ends to save progress.
+Before changing app behavior, skim `CURRENT_WORK.md` for the latest state and
+`PROJECT_STATE.md` / `TASKS.md` for the broader picture.
 
-Do not introduce pricing or financial features unless a new approved issue explicitly requests them.
-
-If recovering after another assistant stopped, use the remote branch and `CURRENT_WORK.md`; never require the previous chat transcript.
+Keep in mind:
+- Inventory-only for now — no pricing, cost, revenue, or invoicing UI unless
+  explicitly asked for.
+- `source/markup.html`, `source/styles.css`, `source/app.js`, `source/data.js`
+  are the canonical files. `index.html` is the same content bundled into one
+  file (styles and scripts inlined) — keep both in sync when editing.
+- The app is also a PWA (`manifest.json`, `sw.js`, icons) and is deployed via
+  GitHub Pages at https://git-akholikov.github.io/uzbegim-inventory/. Bump the
+  `CACHE_NAME` in `sw.js` when shipping a change, so cached phones pick it up.
+- Log meaningful changes in `CURRENT_WORK.md`, commit, and push.

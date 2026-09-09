@@ -1,8 +1,11 @@
 # Uzbegim Inventory
 
-Mobile- and desktop-friendly warehouse inventory prototype intended for a future Google Apps Script and Google Sheets deployment.
+Mobile- and desktop-friendly warehouse inventory app for Uzbegim Food Market.
 
-## Open the prototype
+**Live app:** https://git-akholikov.github.io/uzbegim-inventory/ — installable
+as a PWA (open the link on a phone, then "Add to Home Screen").
+
+## Open it locally
 
 Open `index.html` in a browser. No installation is required.
 
@@ -16,21 +19,14 @@ Open `index.html` in a browser. No installation is required.
 - Inventory reporting with 7-day, 30-day, and custom date ranges
 - No pricing, cost, revenue, profit, or invoicing interface
 
-## Multi-AI collaboration
+## Working on this project
 
-Begin with `START-HERE.md`. Before making changes, every assistant must then read:
-
-1. `COLLABORATION.md`
-2. `PROJECT_STATE.md`
-3. `CURRENT_WORK.md`
-4. `TASKS.md`
-
-Agent-specific instruction files (`AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`) all point to the same shared workflow.
-
-Progress is saved continuously in the task branch and `CURRENT_WORK.md`, so a different assistant can recover after an unexpected usage-limit stop.
-
-The repository stores the work and instructions. Starting a replacement assistant is manual unless API-based automation is configured; see `AUTOMATION.md`.
+`source/markup.html`, `source/styles.css`, `source/app.js`, and
+`source/data.js` are the canonical files; `index.html` is the same content
+bundled into one file for the live deploy — keep both in sync. See
+`CURRENT_WORK.md` for the latest checkpoint and `PROJECT_STATE.md` /
+`TASKS.md` for the wider picture. `CLAUDE.md` has Claude-specific notes.
 
 ## Important
 
-Never commit API keys, passwords, service-account files, or `.env` files. Use GitHub repository secrets for future automation.
+Never commit API keys, passwords, service-account files, or `.env` files.
