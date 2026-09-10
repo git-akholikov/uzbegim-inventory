@@ -1142,13 +1142,25 @@ function postUpdateSupplier(s,cb){postAction('updateSupplier','supplier',s,funct
    for fresh stock every 20s while the tab is open and visible (paused when
    the phone is backgrounded, to save battery/data), then refreshes whatever
    screen is currently open so a second device's change shows up without
-   anyone having to reload. */
+   anyone having to reload.
+   'receive' is deliberately NOT in this map: renderReceive() calls
+   rcReset(), which snaps the screen back to search mode and clears
+   whatever the user was typing — including an in-progress "add new
+   product" entry. Receiving is a local, in-progress transaction, so it
+   is left alone until the user finishes or navigates away; the product
+   list it reads from is still kept current via syncFromServer. */
 var POLL_MS=20000,pollTimer=null;
 var SCREEN_REFRESH={menu:kpis,stock:renderStock,move:renderMove,attn:renderAttn,hist:renderHist,
-  receive:renderReceive,adjust:renderAdjust,prices:renderPrices,custs:renderCusts,
+  adjust:renderAdjust,prices:renderPrices,custs:renderCusts,
   products:renderProducts,staff:renderStaff};
 function refreshCurrentScreen(){
   kpis();
+  // Never rebuild a screen while the user has a form control focused —
+  // a background poll landing mid-keystroke (e.g. typing a count on the
+  // Adjust screen) would otherwise steal focus and look like the page
+  // "refreshing by itself".
+  var ae=document.activeElement;
+  if(ae&&/^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName))return;
   var fn=SCREEN_REFRESH[lastScreen];
   if(fn)fn();
 }
