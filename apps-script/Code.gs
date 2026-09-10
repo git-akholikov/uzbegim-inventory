@@ -36,12 +36,8 @@ function doGet(e) {
     var payload = {
       ok: true,
       products: readProducts(ss, stockBySku),
-      customers: readTable(ss, TAB.customers).map(function (r) {
-        return { id: r['Customer ID'], name: r['Customer Name'], type: r['Type'], active: r['Active (Y/N)'] };
-      }).filter(function (c) { return c.active === 'Y' && c.id; }),
-      suppliers: readTable(ss, TAB.suppliers).map(function (r) {
-        return { id: r['Supplier ID'], name: r['Supplier Name'], active: r['Active (Y/N)'] };
-      }).filter(function (s) { return s.active === 'Y' && s.id; }),
+      customers: readCustomers(ss),
+      suppliers: readSuppliers(ss),
       staff: readTable(ss, TAB.staff).map(function (r) {
         return { email: r['Email (Google Account)'], name: r['Name'], role: r['Role'], active: r['Active (Y/N)'] };
       }).filter(function (s) { return s.active === 'Y' && s.email; }),
@@ -73,6 +69,22 @@ function doPost(e) {
     if (body.action === 'updateProduct') {
       updateProduct(ss, body.product);
       return json({ ok: true, products: readProducts(ss, computeStockMap(ss)) });
+    }
+    if (body.action === 'addCustomer') {
+      var custId = appendCustomer(ss, body.customer);
+      return json({ ok: true, id: custId, customers: readCustomers(ss) });
+    }
+    if (body.action === 'updateCustomer') {
+      updateCustomer(ss, body.customer);
+      return json({ ok: true, customers: readCustomers(ss) });
+    }
+    if (body.action === 'addSupplier') {
+      var supId = appendSupplier(ss, body.supplier);
+      return json({ ok: true, id: supId, suppliers: readSuppliers(ss) });
+    }
+    if (body.action === 'updateSupplier') {
+      updateSupplier(ss, body.supplier);
+      return json({ ok: true, suppliers: readSuppliers(ss) });
     }
     return json({ ok: false, error: 'Unknown action: ' + body.action }, 400);
   } catch (err) {
@@ -136,6 +148,20 @@ function readProducts(ss, stockBySku) {
         price: 0, cost: 0
       };
     });
+}
+
+function readCustomers(ss) {
+  return readTable(ss, TAB.customers).map(function (r) {
+    return { id: r['Customer ID'], name: r['Customer Name'], type: r['Type'],
+      contact: r['Contact Name'], phone: r['Phone'], active: r['Active (Y/N)'] };
+  }).filter(function (c) { return c.active === 'Y' && c.id; });
+}
+
+function readSuppliers(ss) {
+  return readTable(ss, TAB.suppliers).map(function (r) {
+    return { id: r['Supplier ID'], name: r['Supplier Name'],
+      contact: r['Contact Name'], phone: r['Phone'], active: r['Active (Y/N)'] };
+  }).filter(function (s) { return s.active === 'Y' && s.id; });
 }
 
 function findActiveStaff(ss, email) {
@@ -221,6 +247,57 @@ function updateProduct(ss, p) {
     }
   }
   throw new Error('Product not found: ' + p.sku);
+}
+
+function appendCustomer(ss, c) {
+  var sh = ss.getSheetByName(TAB.customers);
+  if (!sh) throw new Error('Customers tab not found');
+  if (!c || !c.name) throw new Error('Missing customer name');
+  var id = 'C' + String(maxIdNumber(sh, 'C') + 1).padStart(2, '0');
+  sh.appendRow([id, c.name, c.type || '', c.contact || '', c.phone || '', 'Y']);
+  return id;
+}
+
+function updateCustomer(ss, c) {
+  var sh = ss.getSheetByName(TAB.customers);
+  if (!sh) throw new Error('Customers tab not found');
+  var values = sh.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (values[r][0] === c.id) {
+      var row = r + 1;
+      if (c.name !== undefined) sh.getRange(row, 2).setValue(c.name);
+      if (c.type !== undefined) sh.getRange(row, 3).setValue(c.type);
+      if (c.contact !== undefined) sh.getRange(row, 4).setValue(c.contact);
+      if (c.phone !== undefined) sh.getRange(row, 5).setValue(c.phone);
+      return;
+    }
+  }
+  throw new Error('Customer not found: ' + c.id);
+}
+
+function appendSupplier(ss, s) {
+  var sh = ss.getSheetByName(TAB.suppliers);
+  if (!sh) throw new Error('Suppliers tab not found');
+  if (!s || !s.name) throw new Error('Missing supplier name');
+  var id = 'SUP' + String(maxIdNumber(sh, 'SUP') + 1).padStart(2, '0');
+  sh.appendRow([id, s.name, s.contact || '', s.phone || '', 'Y']);
+  return id;
+}
+
+function updateSupplier(ss, s) {
+  var sh = ss.getSheetByName(TAB.suppliers);
+  if (!sh) throw new Error('Suppliers tab not found');
+  var values = sh.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (values[r][0] === s.id) {
+      var row = r + 1;
+      if (s.name !== undefined) sh.getRange(row, 2).setValue(s.name);
+      if (s.contact !== undefined) sh.getRange(row, 3).setValue(s.contact);
+      if (s.phone !== undefined) sh.getRange(row, 4).setValue(s.phone);
+      return;
+    }
+  }
+  throw new Error('Supplier not found: ' + s.id);
 }
 
 /* ───────────────── helpers ───────────────── */

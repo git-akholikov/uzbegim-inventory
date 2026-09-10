@@ -107,6 +107,32 @@ function postMovements(type,lines,extra,cb){
     .catch(function(err){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,String(err));});
 }
 
+/* Shared helper behind postAddProduct/postUpdateProduct/postAddCustomer/
+   postUpdateCustomer/postAddSupplier/postUpdateSupplier below: posts one
+   action, applies whatever list comes back (products/customers/suppliers),
+   and warns (without blocking the local edit) if Sheets isn't configured or
+   the request fails — same pattern as postMovements. */
+function postAction(action,key,payload,applyFn,cb){
+  if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
+  if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
+  var body={action:action,staffEmail:SHEETS_STAFF_EMAIL};
+  body[key]=payload;
+  fetch(SHEETS_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if(!res||res.ok===false){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,res&&res.error);return;}
+      if(applyFn)applyFn(res);
+      if(cb)cb(true,null,res);
+    })
+    .catch(function(err){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,String(err));});
+}
+function postAddProduct(p,cb){postAction('addProduct','product',p,function(res){applyServerProducts(res.products);},cb);}
+function postUpdateProduct(p,cb){postAction('updateProduct','product',p,function(res){applyServerProducts(res.products);},cb);}
+function postAddCustomer(c,cb){postAction('addCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb);}
+function postUpdateCustomer(c,cb){postAction('updateCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb);}
+function postAddSupplier(s,cb){postAction('addSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb);}
+function postUpdateSupplier(s,cb){postAction('updateSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb);}
+
 /* Near-live updates: Google Sheets has no push mechanism, so this polls
    for fresh stock every 20s while the tab is open and visible (paused when
    the phone is backgrounded, to save battery/data), then refreshes whatever
@@ -491,6 +517,7 @@ document.getElementById('np-add').addEventListener('click',function(){
   var sku=makeSku(cat,brand);
   PRODUCTS.push({sku:sku,name:full,brand:brand,cat:cat,unit:unit,upb:upb,
                  min:min,boxes:0,price:price,cost:cost,barcode:''});
+  postAddProduct({sku:sku,name:name,flavor:flavor,brand:brand,cat:cat,unit:unit,upb:upb,min:min});
   if(boxes>0)rbasket[sku]={sku:sku,name:full,upb:upb,qty:boxes};
 
   ['np-name','np-flavor','np-upb','np-cost','np-price','np-min','np-boxes'].forEach(function(id){
@@ -679,9 +706,11 @@ document.getElementById('pe-save').addEventListener('click',function(){
   if(prodIdx>=0){
     rec.sku=PRODUCTS[prodIdx].sku; rec.boxes=PRODUCTS[prodIdx].boxes;
     PRODUCTS[prodIdx]=rec; toast(full+' saved');
+    postUpdateProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min});
   }else{
     rec.sku=makeSku(rec.cat,rec.brand); rec.boxes=0;
     PRODUCTS.push(rec); toast(full+' created as '+rec.sku);
+    postAddProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min,supplier:rec.supplier});
   }
   ['stk','mv','pd','pr','aj'].forEach(function(pfx){
     var c=document.getElementById(pfx+'-cat'),b=document.getElementById(pfx+'-brand');
@@ -1214,9 +1243,16 @@ document.getElementById('ce-save').addEventListener('click',function(){
   var rec={name:name,kind:v('ce-kind'),contact:v('ce-contact'),phone:v('ce-phone'),
     email:v('ce-email'),address:v('ce-addr'),city:v('ce-city'),state:v('ce-state'),
     zip:v('ce-zip'),terms:v('ce-terms'),notes:v('ce-notes')};
-  if(editIdx>=0){rec.key=CUSTOMERS[editIdx].key;CUSTOMERS[editIdx]=rec;toast(name+' saved');}
-  else{rec.key='C'+(CUSTOMERS.length+1)+Math.floor(Math.random()*90);CUSTOMERS.push(rec);
-       toast(name+' added');}
+  var sheetsType=(v('ce-kind')==='transfer')?'Own Market':'Wholesale Restaurant';
+  if(editIdx>=0){
+    var old=CUSTOMERS[editIdx];
+    rec.key=old.key;rec.id=old.id;CUSTOMERS[editIdx]=rec;toast(name+' saved');
+    if(old.id)postUpdateCustomer({id:old.id,name:name,type:sheetsType,contact:rec.contact,phone:rec.phone});
+  }else{
+    rec.key='C'+(CUSTOMERS.length+1)+Math.floor(Math.random()*90);CUSTOMERS.push(rec);
+    toast(name+' added');
+    postAddCustomer({name:name,type:sheetsType,contact:rec.contact,phone:rec.phone});
+  }
   renderCusts(); kpis(); go('custs');
 });
 function openSup(i){
@@ -1240,7 +1276,13 @@ document.getElementById('se-save').addEventListener('click',function(){
   var rec={name:name,contact:v('se-contact'),phone:v('se-phone'),email:v('se-email'),
     address:v('se-addr'),city:v('se-city'),state:v('se-state'),zip:v('se-zip'),
     terms:v('se-terms'),notes:v('se-notes')};
-  if(editIdx>=0)SUPPLIERS[editIdx]=rec; else SUPPLIERS.push(rec);
+  if(editIdx>=0){
+    var oldSup=SUPPLIERS[editIdx];rec.id=oldSup.id;SUPPLIERS[editIdx]=rec;
+    if(oldSup.id)postUpdateSupplier({id:oldSup.id,name:name,contact:rec.contact,phone:rec.phone});
+  }else{
+    SUPPLIERS.push(rec);
+    postAddSupplier({name:name,contact:rec.contact,phone:rec.phone});
+  }
   var sel=document.getElementById('rc-sup');
   if(sel)sel.innerHTML=SUPPLIERS.map(function(x){return '<option>'+x.name+'</option>'}).join('');
   toast(name+' saved'); renderCusts(); go('custs');
