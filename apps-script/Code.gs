@@ -38,6 +38,7 @@ function doGet(e) {
       products: readProducts(ss, stockBySku),
       customers: readCustomers(ss),
       suppliers: readSuppliers(ss),
+      movements: readMovements(ss),
       staff: readTable(ss, TAB.staff).map(function (r) {
         return { email: r['Email (Google Account)'], name: r['Name'], role: r['Role'], active: r['Active (Y/N)'] };
       }).filter(function (s) { return s.active === 'Y' && s.email; }),
@@ -162,6 +163,31 @@ function readSuppliers(ss) {
     return { id: r['Supplier ID'], name: r['Supplier Name'],
       contact: r['Contact Name'], phone: r['Phone'], active: r['Active (Y/N)'] };
   }).filter(function (s) { return s.active === 'Y' && s.id; });
+}
+
+function readMovements(ss) {
+  // The frontend groups these flat rows back into the receiving/sale/
+  // adjustment records it shows in History (see applyServerMovements in
+  // app.js) using the shared "Ref <id>" marker every commit writes into
+  // each line's Notes. Capped so a growing ledger doesn't inflate every
+  // GET forever — History only really needs a working window of recent
+  // activity, not the full permanent record (which still lives in the
+  // Sheet itself).
+  var LIMIT = 400;
+  var rows = readTable(ss, TAB.movements).filter(function (r) { return r['Movement ID']; });
+  if (rows.length > LIMIT) rows = rows.slice(rows.length - LIMIT);
+  return rows.map(function (r) {
+    return {
+      id: r['Movement ID'], date: r['Date'], type: r['Type'],
+      qty: Number(r['Quantity (enter positive)']) || 0,
+      signedQty: Number(r['Signed Qty (calculated)']) || 0,
+      productId: r['Product ID'],
+      customerId: r['Customer / Destination ID'] || '',
+      supplierId: r['Supplier ID'] || '',
+      staffEmail: r['Staff Email'] || '',
+      notes: r['Notes'] || ''
+    };
+  });
 }
 
 function findActiveStaff(ss, email) {

@@ -4,7 +4,7 @@ function sellPrice(cust,p){
 }
 var CUSTOMERS=[
 {key:'C1',name:'Uzbegim Market',kind:'transfer',phone:'',email:'',contact:'',address:'',city:'Cincinnati',state:'OH',zip:'',terms:'',notes:'Own retail store'},
-{key:'C2',name:'Cafe Bistro',kind:'transfer',phone:'',email:'',contact:'',address:'',city:'Cincinnati',state:'OH',zip:'',terms:'',notes:'Own cafe'},
+{key:'C2',name:'Cafe Bistro by Uzbegim',kind:'transfer',phone:'',email:'',contact:'',address:'',city:'Cincinnati',state:'OH',zip:'',terms:'',notes:'Own cafe'},
 {key:'C3',name:'Chaykhana N1',kind:'invoice',phone:'(513) 555-0101',email:'',contact:'',address:'',city:'Cincinnati',state:'OH',zip:'',terms:'Net 14',notes:''},
 {key:'C4',name:'Turkistan Restaurant',kind:'invoice',phone:'(513) 555-0102',email:'',contact:'',address:'',city:'Cincinnati',state:'OH',zip:'',terms:'Net 14',notes:''},
 {key:'C5',name:'Registan Restaurant',kind:'invoice',phone:'(513) 555-0103',email:'',contact:'',address:'',city:'Cincinnati',state:'OH',zip:'',terms:'Net 14',notes:''},
@@ -12,6 +12,7 @@ var CUSTOMERS=[
 {key:'C7',name:'Oasis',kind:'invoice',phone:'(513) 555-0105',email:'',contact:'',address:'',city:'Cincinnati',state:'OH',zip:'',terms:'Net 14',notes:''}];
 function findCust(v){for(var i=0;i<CUSTOMERS.length;i++)if(String(CUSTOMERS[i].key)===String(v)||CUSTOMERS[i].name===v)return CUSTOMERS[i];return null;}
 function findSup(v){for(var i=0;i<SUPPLIERS.length;i++)if(SUPPLIERS[i].name===v)return SUPPLIERS[i];return null;}
+function findSupById(id){for(var i=0;i<SUPPLIERS.length;i++)if(SUPPLIERS[i].id===id)return SUPPLIERS[i];return null;}
 var SUPPLIERS=[
 {name:'ARASHAN',phone:'(312) 509-1986',email:'',contact:'',address:'754 W Algonquin Rd',city:'Arlington Heights',state:'IL',zip:'60005',terms:'Net 14',notes:''},
 {name:'LIPARI',phone:'(586) 447-3500',email:'',contact:'',address:'26661 Bunert Rd',city:'Warren',state:'MI',zip:'48089',terms:'Net 30',notes:''},
@@ -75,6 +76,47 @@ function applyServerSuppliers(list){
 }
 function supplierIdByName(name){var s=findSup(name);return(s&&s.id)?s.id:'';}
 
+/* The Movements sheet stores one flat row per product line (no concept of
+   "this receiving/adjustment/transfer" as a group), but every commit flow
+   below (rv2-go, cb-go, rv-go) stamps the exact same "Ref <local-id>" text
+   into every line's Notes for one transaction. That shared marker is what
+   lets a synced-in batch of rows be grouped back into the same kind of
+   multi-line History record the app already builds locally — which is what
+   makes it possible to show a receiving/sale/adjustment made on ONE device
+   in the History list on another, not just its effect on stock counts. */
+function applyServerMovements(list){
+  if(!list)return;
+  var groups={},order=[];
+  list.forEach(function(r){
+    if(!r.id)return;
+    var m=/Ref\s+([A-Za-z0-9-]+)/.exec(r.notes||'');
+    var num=m?m[1]:r.id; // no shared marker (e.g. a row added outside the app) -> its own record
+    if(!groups[num]){groups[num]={rows:[]};order.push(num);}
+    groups[num].rows.push(r);
+  });
+  var added=false;
+  order.forEach(function(num){
+    if(HISTORY.some(function(h){return h.id===num;}))return; // already have it (usually the device that made it)
+    var rows=groups[num].rows,first=rows[0];
+    var type=first.type==='Receiving'?'receipt':first.type==='Customer Stock-Out'?'invoice':'transfer';
+    var custName='Stock count';
+    if(type==='receipt'){var s=findSupById(first.supplierId);custName=s?s.name:(first.supplierId||'');}
+    else if(first.customerId){var c=findCust(first.customerId);custName=c?c.name:first.customerId;}
+    var staff=STAFF.filter(function(x){return x.email===first.staffEmail;})[0];
+    var lines=rows.map(function(r){
+      var p=prod(r.productId);
+      var line={sku:r.productId,name:p?p.name:r.productId,upb:p?p.upb:1,price:0,cost:0,boxes:r.qty};
+      if(first.type==='Stock Count Adjustment'){line.delta=r.signedQty;line.dir=r.signedQty>0?'found':'missing';line.boxes=Math.abs(r.signedQty);}
+      return line;
+    });
+    var notes=(first.notes||'').replace(/^Ref\s+\S+\s*(?:·|\|)?\s*/,'').trim();
+    HISTORY.push({id:num,type:type,cust:custName,date:first.date,time:'',
+      who:staff?staff.name:(first.staffEmail||''),ref:'',notes:notes,lines:lines});
+    added=true;
+  });
+  if(added)HISTORY.sort(function(a,b){return (b.date||'')<(a.date||'')?-1:((b.date||'')>(a.date||'')?1:0);});
+}
+
 function syncFromServer(cb){
   if(!sheetsConfigured()){if(cb)cb(false,'not configured');return;}
   fetch(SHEETS_API_URL).then(function(r){return r.json();}).then(function(res){
@@ -82,6 +124,7 @@ function syncFromServer(cb){
     applyServerProducts(res.products);
     applyServerCustomers(res.customers);
     applyServerSuppliers(res.suppliers);
+    applyServerMovements(res.movements);
     lastSyncOk=true;lastSyncErr='';
     kpis();
     if(cb)cb(true);
@@ -171,6 +214,20 @@ function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 document.addEventListener('visibilitychange',function(){
   if(!document.hidden&&sheetsConfigured())syncFromServer(function(ok){if(ok)refreshCurrentScreen();});
 });
+
+/* Manual refresh button in the header (replaces the old, never-wired-up
+   language switcher): syncs right now instead of waiting up to POLL_MS. */
+function manualRefresh(){
+  if(!sheetsConfigured()){toast('Add the Sheets link in Settings to sync');return;}
+  var btn=document.getElementById('btn-refresh');
+  if(btn)btn.classList.add('spinning');
+  syncFromServer(function(ok,err){
+    if(btn)btn.classList.remove('spinning');
+    if(ok){refreshCurrentScreen();toast('Synced with Google Sheets');}
+    else toast('Sync failed'+(err?(': '+err):''));
+  });
+}
+(function(){var b=document.getElementById('btn-refresh');if(b)b.addEventListener('click',manualRefresh);})();
 
 /* ── visual identity for categories and brands ── */
 var CATICON={
@@ -1260,6 +1317,9 @@ document.getElementById('ce-save').addEventListener('click',function(){
     var old=CUSTOMERS[editIdx];
     rec.key=old.key;rec.id=old.id;CUSTOMERS[editIdx]=rec;toast(name+' saved');
     if(old.id)postUpdateCustomer({id:old.id,name:name,type:sheetsType,contact:rec.contact,phone:rec.phone});
+    // no server id yet -> this customer predates the Sheets connection (e.g. built-in
+    // seed data) and was never actually written there. Saving it now creates it.
+    else postAddCustomer({name:name,type:sheetsType,contact:rec.contact,phone:rec.phone});
   }else{
     rec.key='C'+(CUSTOMERS.length+1)+Math.floor(Math.random()*90);CUSTOMERS.push(rec);
     toast(name+' added');
@@ -1291,6 +1351,9 @@ document.getElementById('se-save').addEventListener('click',function(){
   if(editIdx>=0){
     var oldSup=SUPPLIERS[editIdx];rec.id=oldSup.id;SUPPLIERS[editIdx]=rec;
     if(oldSup.id)postUpdateSupplier({id:oldSup.id,name:name,contact:rec.contact,phone:rec.phone});
+    // no server id yet -> this supplier predates the Sheets connection and was never
+    // actually written there (e.g. built-in seed data). Saving it now creates it.
+    else postAddSupplier({name:name,contact:rec.contact,phone:rec.phone});
   }else{
     SUPPLIERS.push(rec);
     postAddSupplier({name:name,contact:rec.contact,phone:rec.phone});
