@@ -8,8 +8,15 @@
  *
  * Deployed as a Web App (Execute as: Me, Who has access: Anyone), it serves
  * as a small JSON API the app.js frontend calls with fetch():
- *   GET  ?               -> current products, live stock, customers, suppliers, staff
- *   POST {action:...}    -> append movement(s) / add or edit a product
+ *   GET  ?               -> current products, live stock, customers, suppliers,
+ *                            staff, recent movements, recent change logs
+ *   POST {action:...}    -> append movement(s) / add or edit a product,
+ *                            customer, supplier or staff member. addStaff
+ *                            and updateStaff are manager-only (403 for a
+ *                            calling staff whose Role isn't 'manager').
+ *                            Every add/edit (except movements, which already
+ *                            have their own ledger) writes a row to the Logs
+ *                            tab — auto-created on first use.
  *
  * Auth model: this is a small internal tool for 2-3 known staff, not a
  * public system. Because the web app runs for "Anyone" (no Google sign-in
@@ -26,7 +33,7 @@
 
 var TAB = {
   staff: 'Staff', products: 'Products', customers: 'Customers',
-  suppliers: 'Suppliers', movements: 'Movements', stock: 'Stock'
+  suppliers: 'Suppliers', movements: 'Movements', stock: 'Stock', logs: 'Logs'
 };
 
 function doGet(e) {
@@ -39,9 +46,8 @@ function doGet(e) {
       customers: readCustomers(ss),
       suppliers: readSuppliers(ss),
       movements: readMovements(ss),
-      staff: readTable(ss, TAB.staff).map(function (r) {
-        return { email: r['Email (Google Account)'], name: r['Name'], role: r['Role'], active: r['Active (Y/N)'] };
-      }).filter(function (s) { return s.active === 'Y' && s.email; }),
+      staff: readStaffList(ss),
+      logs: readLogs(ss),
       generatedAt: new Date().toISOString()
     };
     return json(payload);
@@ -65,27 +71,45 @@ function doPost(e) {
     }
     if (body.action === 'addProduct') {
       var newId = appendProduct(ss, body.product);
+      appendLog(ss, staff, 'Add', 'Product', 'Added product ' + newId + ((body.product && body.product.name) ? ' — ' + body.product.name : ''));
       return json({ ok: true, id: newId, products: readProducts(ss, computeStockMap(ss)) });
     }
     if (body.action === 'updateProduct') {
       updateProduct(ss, body.product);
+      appendLog(ss, staff, 'Edit', 'Product', 'Edited product ' + (body.product && body.product.sku));
       return json({ ok: true, products: readProducts(ss, computeStockMap(ss)) });
     }
     if (body.action === 'addCustomer') {
       var custId = appendCustomer(ss, body.customer);
+      appendLog(ss, staff, 'Add', 'Customer', 'Added customer ' + custId + ((body.customer && body.customer.name) ? ' — ' + body.customer.name : ''));
       return json({ ok: true, id: custId, customers: readCustomers(ss) });
     }
     if (body.action === 'updateCustomer') {
       updateCustomer(ss, body.customer);
+      appendLog(ss, staff, 'Edit', 'Customer', 'Edited customer ' + (body.customer && body.customer.id));
       return json({ ok: true, customers: readCustomers(ss) });
     }
     if (body.action === 'addSupplier') {
       var supId = appendSupplier(ss, body.supplier);
+      appendLog(ss, staff, 'Add', 'Supplier', 'Added supplier ' + supId + ((body.supplier && body.supplier.name) ? ' — ' + body.supplier.name : ''));
       return json({ ok: true, id: supId, suppliers: readSuppliers(ss) });
     }
     if (body.action === 'updateSupplier') {
       updateSupplier(ss, body.supplier);
+      appendLog(ss, staff, 'Edit', 'Supplier', 'Edited supplier ' + (body.supplier && body.supplier.id));
       return json({ ok: true, suppliers: readSuppliers(ss) });
+    }
+    if (body.action === 'addStaff') {
+      if (!isManagerRole(staff['Role'])) return json({ ok: false, error: 'Only managers can manage staff' }, 403);
+      appendStaffRow(ss, body.staff || {});
+      appendLog(ss, staff, 'Add', 'Staff', 'Added staff ' + (body.staff && body.staff.name) + ' (' + ((body.staff && body.staff.role) || 'worker') + ')');
+      return json({ ok: true, staff: readStaffList(ss) });
+    }
+    if (body.action === 'updateStaff') {
+      if (!isManagerRole(staff['Role'])) return json({ ok: false, error: 'Only managers can manage staff' }, 403);
+      updateStaffRow(ss, body.staff || {});
+      appendLog(ss, staff, 'Edit', 'Staff', 'Edited staff ' + (body.staff && body.staff.name) + ' — role: ' + ((body.staff && body.staff.role) || 'worker'));
+      return json({ ok: true, staff: readStaffList(ss) });
     }
     return json({ ok: false, error: 'Unknown action: ' + body.action }, 400);
   } catch (err) {
@@ -197,6 +221,37 @@ function findActiveStaff(ss, email) {
     if (rows[i]['Email (Google Account)'] === email && rows[i]['Active (Y/N)'] === 'Y') return rows[i];
   }
   return null;
+}
+
+function isManagerRole(v) {
+  return String(v || '').trim().toLowerCase() === 'manager';
+}
+
+function readStaffList(ss) {
+  // Normalized to lowercase 'manager'/'worker' here so every caller (the
+  // frontend included) can compare with a plain === instead of guessing at
+  // the Sheet's capitalization convention (the real Staff tab stores
+  // "Manager"/"Worker", capitalized).
+  return readTable(ss, TAB.staff).map(function (r) {
+    return { email: r['Email (Google Account)'], name: r['Name'], role: isManagerRole(r['Role']) ? 'manager' : 'worker', active: r['Active (Y/N)'] };
+  }).filter(function (s) { return s.active === 'Y' && s.email; });
+}
+
+function readLogs(ss) {
+  // Capped the same way readMovements() is, for the same reason: a growing
+  // ledger shouldn't inflate every GET forever. The full permanent record
+  // still lives in the Logs tab itself.
+  var LIMIT = 300;
+  var sh = ss.getSheetByName(TAB.logs);
+  if (!sh) return [];
+  var rows = readTable(ss, TAB.logs).filter(function (r) { return r['Timestamp']; });
+  if (rows.length > LIMIT) rows = rows.slice(rows.length - LIMIT);
+  return rows.map(function (r) {
+    return {
+      ts: r['Timestamp'], staffEmail: r['Staff Email'] || '', staffName: r['Staff Name'] || '',
+      action: r['Action'] || '', entity: r['Entity'] || '', details: r['Details'] || ''
+    };
+  });
 }
 
 /* ───────────────── writing ───────────────── */
@@ -324,6 +379,90 @@ function updateSupplier(ss, s) {
     }
   }
   throw new Error('Supplier not found: ' + s.id);
+}
+
+function appendStaffRow(ss, s) {
+  var sh = ss.getSheetByName(TAB.staff);
+  if (!sh) throw new Error('Staff tab not found');
+  if (!s || !s.name) throw new Error('Missing staff name');
+  // Written capitalized ("Manager"/"Worker") to match the existing Staff
+  // tab's convention — reading it back always normalizes to lowercase via
+  // isManagerRole(), so the exact casing here doesn't matter functionally,
+  // but keeping it consistent makes the sheet itself readable to a human.
+  appendRowByHeaders(sh, {
+    'Staff ID': 'S' + String(maxIdNumber(sh, 'S') + 1).padStart(2, '0'),
+    'Email (Google Account)': s.email || '',
+    'Name': s.name,
+    'Role': isManagerRole(s.role) ? 'Manager' : 'Worker',
+    'Active (Y/N)': 'Y'
+  });
+}
+
+function updateStaffRow(ss, s) {
+  // Matched by Name (not email, which this same edit may be changing for the
+  // first time) — the Staff screen doesn't offer a rename, so Name is the
+  // stable key here, the same way Product ID / Customer ID / Supplier ID are
+  // the stable keys for those tabs.
+  var sh = ss.getSheetByName(TAB.staff);
+  if (!sh) throw new Error('Staff tab not found');
+  if (!s || !s.name) throw new Error('Missing staff name');
+  var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var nameCol = headers.indexOf('Name');
+  var values = sh.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][nameCol]).toLowerCase() === String(s.name).toLowerCase()) {
+      var row = r + 1;
+      if (s.email !== undefined) setByHeader(sh, headers, row, 'Email (Google Account)', s.email);
+      if (s.role !== undefined) setByHeader(sh, headers, row, 'Role', isManagerRole(s.role) ? 'Manager' : 'Worker');
+      return;
+    }
+  }
+  throw new Error('Staff not found: ' + s.name);
+}
+
+function setByHeader(sh, headers, row, headerName, value) {
+  var col = headers.indexOf(headerName);
+  if (col === -1) return;
+  sh.getRange(row, col + 1).setValue(value);
+}
+
+function appendRowByHeaders(sh, dataObj) {
+  // Writes by header NAME rather than a hardcoded column order, so this
+  // never has to guess the real sheet's column layout (the class of bug
+  // that has bitten this project before — a mismatched assumption about a
+  // tab's shape silently writing into the wrong column).
+  var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var row = headers.map(function (h) { return dataObj.hasOwnProperty(h) ? dataObj[h] : ''; });
+  sh.appendRow(row);
+}
+
+function getOrCreateLogsSheet(ss) {
+  var sh = ss.getSheetByName(TAB.logs);
+  if (!sh) {
+    sh = ss.insertSheet(TAB.logs);
+    sh.appendRow(['Timestamp', 'Staff Email', 'Staff Name', 'Action', 'Entity', 'Details']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function appendLog(ss, staff, action, entity, details) {
+  // Logging must never break the write it's describing — if the Logs tab
+  // is unreachable for some reason, swallow the error rather than fail the
+  // whole request.
+  try {
+    var sh = getOrCreateLogsSheet(ss);
+    var tz = Session.getScriptTimeZone() || 'America/New_York';
+    var ts = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm');
+    appendRowByHeaders(sh, {
+      'Timestamp': ts,
+      'Staff Email': staff ? staff['Email (Google Account)'] : '',
+      'Staff Name': staff ? staff['Name'] : '',
+      'Action': action,
+      'Entity': entity,
+      'Details': details
+    });
+  } catch (e) { }
 }
 
 /* ───────────────── helpers ───────────────── */

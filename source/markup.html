@@ -85,7 +85,7 @@
         </button>
       </div>
 
-      <div class="grouplab" id="mgr-lab">Manager</div>
+      <div class="grouplab" id="mgr-lab">Manage</div>
       <div class="menu" id="mgr-menu">
         <button class="mbtn" data-go="adjust">
           <div class="ico i-blue"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 13l2 2 4-4"/></svg></div>
@@ -102,10 +102,15 @@
           <div class="ttl">Customers &amp; suppliers</div>
           <div class="sub" id="hi-cu">Manage both lists</div>
         </button>
-        <button class="mbtn" data-go="staff">
+        <button class="mbtn" data-go="staff" id="mbtn-staff">
           <div class="ico i-blue"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
           <div class="ttl">Staff</div>
           <div class="sub" id="hi-st">Who can use the app</div>
+        </button>
+        <button class="mbtn" data-go="logs" id="mbtn-logs">
+          <div class="ico i-rust"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6"/><path d="M9 17h6"/><path d="M9 9h1"/></svg></div>
+          <div class="ttl">Activity log</div>
+          <div class="sub">Who changed what</div>
         </button>
         <button class="mbtn" data-go="learn">
           <div class="ico i-sand"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><rect x="3" y="4" width="1.5" height="16" fill="currentColor" stroke="none"/><rect x="5.5" y="4" width="1" height="16" fill="currentColor" stroke="none"/><rect x="7.5" y="4" width="2" height="16" fill="currentColor" stroke="none"/><rect x="10.5" y="4" width="1" height="16" fill="currentColor" stroke="none"/><rect x="12.5" y="4" width="1.5" height="16" fill="currentColor" stroke="none"/><rect x="15" y="4" width="1" height="16" fill="currentColor" stroke="none"/><rect x="17" y="4" width="2" height="16" fill="currentColor" stroke="none"/><rect x="20" y="4" width="1" height="16" fill="currentColor" stroke="none"/></svg></div>
@@ -453,6 +458,10 @@
       <button class="btn" id="sf-add">Add person</button>
     </div>
 
+    <div class="screen" id="s-logs">
+      <div class="list" id="lg-list"></div>
+    </div>
+
     <div class="screen" id="s-settings">
       <div class="sechead">Warehouse details</div>
       <div class="fg"><label class="lab">Business name</label><input class="ctrl" id="se2-name"></div>
@@ -488,6 +497,12 @@
       <div class="fg"><label class="lab">Your email (for Sheets sync)</label><input class="ctrl" id="se2-staffemail" type="email" placeholder="you@example.com"></div>
       <div class="fg" id="se2-syncstatus" style="color:#8a8780;font-size:13px">Not synced yet</div>
       <button class="btn" id="se2-syncnow" type="button">Sync now</button>
+
+      <div class="fg" id="se2-pin-wrap">
+        <label class="lab">Manager PIN</label>
+        <input class="ctrl" id="se2-pin" placeholder="4+ digits" inputmode="numeric">
+        <div class="hint">Required to open Staff and Activity log from a worker's phone.</div>
+      </div>
 
       <button class="btn" id="se2-save">Save settings</button>
     </div>

@@ -76,6 +76,37 @@ function applyServerSuppliers(list){
 }
 function supplierIdByName(name){var s=findSup(name);return(s&&s.id)?s.id:'';}
 
+/* Real Staff list + role, synced from the Sheet the same way products/
+   customers/suppliers already are — matched by email first (the stable
+   identifier once someone has signed in at least once), falling back to
+   name for a locally-added person who has no email yet. After merging the
+   list, ME.role/ME.name are set from whichever synced entry matches the
+   email entered in Settings, which is the actual fix for isManager() —
+   before this, ME.role was hardcoded 'manager' forever and the worker view
+   never really worked. An email that's set but matches nobody defaults to
+   worker (least privilege) rather than silently staying manager. */
+function applyServerStaff(list){
+  if(!list)return;
+  list.forEach(function(s){
+    var p=null;
+    for(var i=0;i<STAFF.length;i++){
+      var x=STAFF[i];
+      if((s.email&&x.email&&x.email.toLowerCase()===s.email.toLowerCase())||x.name.toLowerCase()===s.name.toLowerCase()){p=x;break;}
+    }
+    var role=(s.role==='manager')?'manager':'worker';
+    if(p){p.email=s.email;p.name=s.name;p.role=role;}
+    else STAFF.push({name:s.name,email:s.email,role:role});
+  });
+  var em=(SHEETS_STAFF_EMAIL||'').trim().toLowerCase();
+  if(em){
+    var me=null;
+    for(var j=0;j<STAFF.length;j++)if((STAFF[j].email||'').toLowerCase()===em){me=STAFF[j];break;}
+    ME.role=me?me.role:'worker';
+    if(me)ME.name=me.name;
+    ME.email=SHEETS_STAFF_EMAIL;
+  }
+}
+
 /* The Movements sheet stores one flat row per product line (no concept of
    "this receiving/adjustment/transfer" as a group), but every commit flow
    below (rv2-go, cb-go, rv-go) stamps the exact same "Ref <local-id>" text
@@ -125,10 +156,22 @@ function syncFromServer(cb){
     applyServerCustomers(res.customers);
     applyServerSuppliers(res.suppliers);
     applyServerMovements(res.movements);
+    applyServerStaff(res.staff);
+    applyServerLogs(res.logs);
     lastSyncOk=true;lastSyncErr='';
     kpis();
     if(cb)cb(true);
   }).catch(function(err){lastSyncOk=false;lastSyncErr=String(err);if(cb)cb(false,lastSyncErr);});
+}
+
+/* Change log — who added/edited what. Manager+PIN gated in the UI (see
+   isManager()/requireManager()). Simple full-replace on every sync since
+   these are read-only history entries, not something being locally edited
+   the way a draft product/customer record can be. */
+var LOGS=[];
+function applyServerLogs(list){
+  if(!list)return;
+  LOGS=list.slice().sort(function(a,b){return (b.ts||'')<(a.ts||'')?-1:((b.ts||'')>(a.ts||'')?1:0);});
 }
 
 function postMovements(type,lines,extra,cb){
@@ -175,6 +218,8 @@ function postAddCustomer(c,cb){postAction('addCustomer','customer',c,function(re
 function postUpdateCustomer(c,cb){postAction('updateCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb);}
 function postAddSupplier(s,cb){postAction('addSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb);}
 function postUpdateSupplier(s,cb){postAction('updateSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb);}
+function postAddStaff(s,cb){postAction('addStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb);}
+function postUpdateStaff(s,cb){postAction('updateStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb);}
 
 /* Near-live updates: Google Sheets has no push mechanism, so this polls
    for fresh stock every 20s while the tab is open and visible (paused when
@@ -190,7 +235,7 @@ function postUpdateSupplier(s,cb){postAction('updateSupplier','supplier',s,funct
 var POLL_MS=20000,pollTimer=null;
 var SCREEN_REFRESH={menu:kpis,stock:renderStock,move:renderMove,attn:renderAttn,hist:renderHist,
   adjust:renderAdjust,prices:renderPrices,custs:renderCusts,
-  products:renderProducts,staff:renderStaff};
+  products:renderProducts,staff:renderStaff,logs:renderLogs};
 function refreshCurrentScreen(){
   kpis();
   // Never rebuild a screen while the user has a form control focused —
@@ -305,10 +350,21 @@ function movementId(id){return String(id||'').indexOf('INV-')===0?'OUT-'+String(
 function shift(days){var d=new Date(TODAY);d.setDate(d.getDate()-days);return d.toISOString().slice(0,10);}
 
 function go(id){
+  // Staff and Logs are the two screens workers shouldn't see. The buttons
+  // that lead here are already hidden for a worker (see kpis()), but this
+  // is the single chokepoint every path goes through — a direct go('staff')
+  // from the console would otherwise skip the hidden button entirely — so
+  // the actual gate lives here, not just in a click handler.
+  if((id==='staff'||id==='logs')&&!isManager()){
+    requireManager(function(){go(id);});
+    return;
+  }
+  if(id==='staff')renderStaff();
+  if(id==='logs')renderLogs();
   var all=document.querySelectorAll('.screen');
   for(var i=0;i<all.length;i++)all[i].classList.remove('on');
   document.getElementById('s-'+id).classList.add('on');
-  var t={menu:'Uzbegim Inventory',stock:'Stock',move:'New movement',review:'Review movement',conf:'Confirmed',receive:'Receive stock',attn:'Needs attention',hist:'Movement history',detail:'Movement detail',stats:'Inventory report',scan:'Scan barcode',learn:'Barcode capture',adjust:'Stock count',prices:'Prices and cost',custs:'Customers & suppliers',rreview:'Review delivery',custedit:'Customer details',supedit:'Supplier details',products:'Products',prodedit:'Product details',staff:'Staff',settings:'Settings'};
+  var t={menu:'Uzbegim Inventory',stock:'Stock',move:'New movement',review:'Review movement',conf:'Confirmed',receive:'Receive stock',attn:'Needs attention',hist:'Movement history',detail:'Movement detail',stats:'Inventory report',scan:'Scan barcode',learn:'Barcode capture',adjust:'Stock count',prices:'Prices and cost',custs:'Customers & suppliers',rreview:'Review delivery',custedit:'Customer details',supedit:'Supplier details',products:'Products',prodedit:'Product details',staff:'Staff',logs:'Activity log',settings:'Settings'};
   document.getElementById('title').textContent=t[id];
   document.getElementById('back').classList.toggle('show',id!=='menu');
   document.getElementById('dock').classList.toggle('on',id==='move');
@@ -335,7 +391,6 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
   if(d==='prices')renderPrices();
   if(d==='custs')renderCusts();
   if(d==='products')renderProducts();
-  if(d==='staff')renderStaff();
   if(d==='settings')renderSettings();
   if(d==='newprod'){
     go('receive');
@@ -399,8 +454,14 @@ function kpis(){
   if(cu)cu.textContent=CUSTOMERS.length+' customers · '+SUPPLIERS.length+' suppliers';
   var role=document.getElementById('hi-role');
   if(role)role.textContent=isManager()?'Manager':'Worker';
-  var mgr=document.getElementById('mgr-menu'),lab=document.getElementById('mgr-lab');
-  if(mgr&&lab){var show=isManager();mgr.style.display=show?'grid':'none';lab.style.display=show?'block':'none';}
+  // Everyone sees the same menu (Stock count, Products, Customers &
+  // suppliers, Barcodes, Settings) — only Staff and Logs are manager-only,
+  // so only those two buttons are individually hidden here rather than the
+  // whole section.
+  var show=isManager();
+  ['mbtn-staff','mbtn-logs'].forEach(function(id){
+    var el=document.getElementById(id); if(el)el.style.display=show?'':'none';
+  });
 }
 function setupFilters(p){
   fill(document.getElementById(p+'-cat'),uniq(PRODUCTS.map(function(x){return x.cat})),'All categories');
@@ -652,7 +713,7 @@ document.getElementById('rv2-go').addEventListener('click',function(){
 });
 
 
-/* ══════════ MANAGER: PRODUCTS ══════════ */
+/* ══════════ PRODUCTS (visible to everyone) ══════════ */
 var STAFF=[{name:'Abdu',email:'abduraufkholikov@gmail.com',role:'manager'},
            {name:'Nodir',email:'',role:'worker'}];
 var SETTINGS={bizName:'UZBEGIM FOOD MARKET',
@@ -808,25 +869,46 @@ function renderStaff(){
     var c=ev.target.closest?ev.target.closest('.staff'):null;
     if(!c)return;
     var i=parseInt(c.getAttribute('data-i'),10),p=STAFF[i];
+    var hadEmail=!!p.email; // synced to Sheets already vs. still a local-only entry
     var em=prompt('Google account email for '+p.name,p.email||'');
     if(em!==null)p.email=em.trim();
     var rl=prompt('Role for '+p.name+' — type manager or worker',p.role);
     if(rl!==null&&(rl==='manager'||rl==='worker'))p.role=rl;
     renderStaff(); toast(p.name+' updated');
+    if(hadEmail)postUpdateStaff({name:p.name,email:p.email,role:p.role});
+    else if(p.email)postAddStaff({name:p.name,email:p.email,role:p.role});
   });
 })();
 document.getElementById('sf-add').addEventListener('click',function(){
   var n=document.getElementById('sf-name').value.trim();
   if(!n){toast('Name is required');return;}
   for(var i=0;i<STAFF.length;i++)if(STAFF[i].name.toLowerCase()===n.toLowerCase()){toast(n+' already exists');return;}
-  STAFF.push({name:n,email:document.getElementById('sf-email').value.trim(),
-              role:document.getElementById('sf-role').value});
+  var email=document.getElementById('sf-email').value.trim();
+  var role=document.getElementById('sf-role').value;
+  STAFF.push({name:n,email:email,role:role});
   document.getElementById('sf-name').value='';
   document.getElementById('sf-email').value='';
   toast(n+' added'); renderStaff();
+  postAddStaff({name:n,email:email,role:role});
 });
 
-/* ══════════ MANAGER: SETTINGS ══════════ */
+/* ══════════ MANAGER: LOGS ══════════ */
+function renderLogs(){
+  var el=document.getElementById('lg-list'); if(!el)return;
+  if(!LOGS.length){el.innerHTML='<div class="empty">No changes logged yet</div>';return;}
+  el.innerHTML=LOGS.map(function(l){
+    var tag=l.action==='Add'?'t-invoice':'t-transfer';
+    return '<div class="card">'+
+      '<div class="c-info">'+
+      '<div class="c-name">'+(l.details||(l.action+' '+l.entity))+'</div>'+
+      '<div class="c-meta"><span class="h-tag '+tag+'">'+(l.action||'').toUpperCase()+' · '+(l.entity||'').toUpperCase()+'</span> &middot; '+(l.staffName||l.staffEmail||'Unknown')+'</div>'+
+      '<div class="c-meta">'+(l.ts||'')+'</div>'+
+      '</div></div>';
+  }).join('');
+}
+
+/* ══════════ SETTINGS (open to everyone; the Manager PIN field inside it
+   is the one part that stays manager-only) ══════════ */
 function renderSettings(){
   document.getElementById('se2-name').value=SETTINGS.bizName;
   document.getElementById('se2-line1').value=SETTINGS.line1;
@@ -838,6 +920,13 @@ function renderSettings(){
   document.getElementById('se2-when').value=SETTINGS.emailWhen;
   document.getElementById('se2-api').value=SHEETS_API_URL;
   document.getElementById('se2-staffemail').value=SHEETS_STAFF_EMAIL;
+  var canMgr=isManager();
+  var pinWrap=document.getElementById('se2-pin-wrap');
+  if(pinWrap)pinWrap.style.display=canMgr?'':'none';
+  var pinEl=document.getElementById('se2-pin');
+  // Left blank (not just hidden) for a worker view — the point of the PIN
+  // is defeated if it's sitting in the DOM for anyone to read via devtools.
+  if(pinEl)pinEl.value=canMgr?managerPin():'';
   drawSyncStatus();
 }
 function drawSyncStatus(){
@@ -862,6 +951,10 @@ document.getElementById('se2-save').addEventListener('click',function(){
   SHEETS_STAFF_EMAIL=document.getElementById('se2-staffemail').value.trim();
   try{localStorage.setItem('uzb_api_url',SHEETS_API_URL);localStorage.setItem('uzb_staff_email',SHEETS_STAFF_EMAIL);}catch(e){}
   ME.email=SHEETS_STAFF_EMAIL;
+  if(isManager()){
+    var pinVal=document.getElementById('se2-pin').value.trim();
+    if(pinVal)try{localStorage.setItem('uzb_mgr_pin',pinVal);}catch(e){}
+  }
   kpis(); toast('Settings saved');
   if(sheetsConfigured())syncFromServer(function(){drawSyncStatus();});
   startPolling();
@@ -877,7 +970,7 @@ document.getElementById('se2-syncnow').addEventListener('click',function(){
   });
 });
 
-/* ══════════ MANAGER: STOCK COUNT ══════════ */
+/* ══════════ STOCK COUNT (visible to everyone) ══════════ */
 var counts={};
 function renderAdjust(){
   if(!document.getElementById('aj-cat').options.length){
@@ -961,7 +1054,7 @@ document.getElementById('cb-go').addEventListener('click',function(){
   kpis(); go('conf');
 });
 
-/* ══════════ MANAGER: PRICES ══════════ */
+/* ══════════ PRICES (visible to everyone) ══════════ */
 function renderPrices(){
   if(!document.getElementById('pr-cat').options.length){
     fill(document.getElementById('pr-cat'),uniq(PRODUCTS.map(function(x){return x.cat})),'All categories');
@@ -1220,7 +1313,7 @@ function refreshMargin(sku){
   if(note)note.style.display=(cust&&customPrice(cust,sku)===null)?'block':'none';
 }
 
-/* ══════════ MANAGER: CUSTOMERS ══════════ */
+/* ══════════ CUSTOMERS & SUPPLIERS (visible to everyone) ══════════ */
 var editIdx=-1;
 function fullAddr(o){
   var l1=o.address||'';
@@ -1375,7 +1468,22 @@ document.getElementById('se-save').addEventListener('click',function(){
 
 
 
-function isManager(){return !ME||ME.role!=='worker';}
+/* Manager PIN: a lightweight deterrent, not real login — this app has no
+   password system anywhere else either (staff just enter their email in
+   Settings). The PIN just raises the bar above "tap the hidden button" for
+   Staff/Logs specifically, and lets a manager temporarily unlock those two
+   screens on a phone currently synced as a worker. Ships with a default;
+   a manager should set a real one from Settings (manager-only field there). */
+var PIN_OVERRIDE=false;
+function managerPin(){try{return localStorage.getItem('uzb_mgr_pin')||'2468';}catch(e){return '2468';}}
+function isManager(){return PIN_OVERRIDE||!ME||ME.role!=='worker';}
+function requireManager(next){
+  if(isManager()){next();return;}
+  var p=prompt('Manager PIN required');
+  if(p===null)return;
+  if(p===managerPin()){PIN_OVERRIDE=true;kpis();toast('Manager unlocked for this session');next();}
+  else toast('Incorrect PIN');
+}
 var toastTimer=null;
 function toast(msg){
   var t=document.getElementById('toast');

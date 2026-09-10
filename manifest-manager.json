@@ -1,0 +1,16 @@
+{
+  "name": "Uzbegim Manager",
+  "short_name": "Manager",
+  "description": "Warehouse stock tracking — full manager view (Staff and Activity log included)",
+  "start_url": "./manager.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#faf9f7",
+  "theme_color": "#5c4a10",
+  "icons": [
+    { "src": "icon-192-manager.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-manager.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512-manager.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
