@@ -10,10 +10,22 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .langs{display:flex;gap:4px}
 .lang{background:rgba(255,255,255,.2);border:none;color:#fff;font-size:10px;font-weight:700;padding:3px 6px;border-radius:4px;cursor:pointer}
 .lang.on{background:rgba(255,255,255,.45)}
-.refresh-btn{background:rgba(255,255,255,.2);border:none;color:#fff;width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.refresh-btn{background:rgba(255,255,255,.2);border:none;color:#fff;width:32px;height:32px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 auto;position:relative}
 .refresh-btn:active{background:rgba(255,255,255,.35)}
 .refresh-btn.spinning svg{animation:refresh-spin .7s linear infinite}
 @keyframes refresh-spin{to{transform:rotate(360deg)}}
+/* Small always-visible dot on the header refresh button so sync status is
+   readable from any screen, not just buried in Settings. Hidden entirely
+   until Sheets sync is configured (there's nothing to report before then). */
+.sync-dot{position:absolute;top:3px;right:3px;width:8px;height:8px;border-radius:50%;background:#c9c4b8;border:1.5px solid #0b4747;display:none}
+.sync-dot.show{display:block}
+.sync-dot.ok{background:#3fb56d}
+.sync-dot.bad{background:#e2685f}
+/* Sync status line inside Settings — same color language as the dot above. */
+.syncstatus{color:#8a8780;font-size:13px;display:flex;align-items:center;gap:6px}
+.syncstatus.ok{color:#1f7a44;font-weight:700}
+.syncstatus.bad{color:#a83b34;font-weight:700}
+.syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3fb56d;flex:0 0 auto}
 .body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch;background:#faf9f7}
 .screen{display:none;flex-direction:column;flex:1}
 .screen.on{display:flex}
@@ -342,8 +354,12 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 /* ===== UI REVIEW REVISION ===== */
 :root{--teal:#0F5C5C;--teal-deep:#0a4545;--rust:#C1622D;--ink:#242927;--muted:#706f69;--line:#dedbd3;--paper:#faf9f7}
 .hero-person{display:flex;align-items:center;gap:9px;margin-top:1px;position:relative;z-index:2}
-.role-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.9);font-size:9px;font-weight:800;letter-spacing:.45px;text-transform:uppercase}
-.role-badge:before{content:'';width:6px;height:6px;border-radius:50%;background:#7bd0a0;box-shadow:0 0 0 3px rgba(123,208,160,.12)}
+.role-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 9px 4px 7px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.95);font-size:9.5px;font-weight:800;letter-spacing:.45px;text-transform:uppercase}
+/* Manager vs worker get a different tint AND a different icon (🔑 vs 👤,
+   the same pair already used in the Staff list) so the distinction reads
+   at a glance, not just from the word itself. */
+.role-badge.mgr{background:rgba(224,163,58,.24);border-color:rgba(224,163,58,.4)}
+.role-badge.wrk{background:rgba(123,208,160,.18);border-color:rgba(123,208,160,.3)}
 .lang{min-width:32px;height:30px;padding:0 7px;border-radius:7px;font-size:10.5px}
 .alertstrip .tx{font-size:12px}
 .mbtn{min-height:104px}

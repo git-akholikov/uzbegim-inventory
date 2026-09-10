@@ -76,15 +76,15 @@ function applyServerSuppliers(list){
 }
 function supplierIdByName(name){var s=findSup(name);return(s&&s.id)?s.id:'';}
 
-/* Real Staff list + role, synced from the Sheet the same way products/
-   customers/suppliers already are — matched by email first (the stable
-   identifier once someone has signed in at least once), falling back to
-   name for a locally-added person who has no email yet. After merging the
-   list, ME.role/ME.name are set from whichever synced entry matches the
-   email entered in Settings, which is the actual fix for isManager() —
-   before this, ME.role was hardcoded 'manager' forever and the worker view
-   never really worked. An email that's set but matches nobody defaults to
-   worker (least privilege) rather than silently staying manager. */
+/* Real Staff list, synced from the Sheet the same way products/customers/
+   suppliers already are — matched by email first (the stable identifier
+   once someone has signed in at least once), falling back to name for a
+   locally-added person who has no email yet. ME.name/ME.email are set from
+   whichever synced entry matches the email entered in Settings, for
+   "who did this movement" and the "(you)" marker in the Staff list.
+   ME.role is tracked too but is informational only now — which app someone
+   installed (see isManager()/APP_VARIANT) is what actually decides what
+   they can see, not this Sheet column. */
 function applyServerStaff(list){
   if(!list)return;
   list.forEach(function(s){
@@ -164,8 +164,8 @@ function syncFromServer(cb){
   }).catch(function(err){lastSyncOk=false;lastSyncErr=String(err);if(cb)cb(false,lastSyncErr);});
 }
 
-/* Change log — who added/edited what. Manager+PIN gated in the UI (see
-   isManager()/requireManager()). Simple full-replace on every sync since
+/* Change log — who added/edited what. Only shown in the manager app (see
+   isManager()). Simple full-replace on every sync since
    these are read-only history entries, not something being locally edited
    the way a draft product/customer record can be. */
 var LOGS=[];
@@ -350,13 +350,13 @@ function movementId(id){return String(id||'').indexOf('INV-')===0?'OUT-'+String(
 function shift(days){var d=new Date(TODAY);d.setDate(d.getDate()-days);return d.toISOString().slice(0,10);}
 
 function go(id){
-  // Staff and Logs are the two screens workers shouldn't see. The buttons
-  // that lead here are already hidden for a worker (see kpis()), but this
-  // is the single chokepoint every path goes through — a direct go('staff')
-  // from the console would otherwise skip the hidden button entirely — so
-  // the actual gate lives here, not just in a click handler.
+  // Staff and Logs are the two screens the worker app doesn't have. The
+  // buttons that lead here are already hidden on that build (see kpis()),
+  // but this is the single chokepoint every path goes through — a direct
+  // go('staff') from the console would otherwise skip the hidden button
+  // entirely — so the actual gate lives here, not just in a click handler.
   if((id==='staff'||id==='logs')&&!isManager()){
-    requireManager(function(){go(id);});
+    toast('Not available in this app');
     return;
   }
   if(id==='staff')renderStaff();
@@ -453,7 +453,11 @@ function kpis(){
   var cu=document.getElementById('hi-cu');
   if(cu)cu.textContent=CUSTOMERS.length+' customers · '+SUPPLIERS.length+' suppliers';
   var role=document.getElementById('hi-role');
-  if(role)role.textContent=isManager()?'Manager':'Worker';
+  if(role){
+    var mgr=isManager();
+    role.className='role-badge '+(mgr?'mgr':'wrk');
+    role.textContent=(mgr?'🔑 ':'👤 ')+(mgr?'Manager':'Worker');
+  }
   // Everyone sees the same menu (Stock count, Products, Customers &
   // suppliers, Barcodes, Settings) — only Staff and Logs are manager-only,
   // so only those two buttons are individually hidden here rather than the
@@ -462,6 +466,7 @@ function kpis(){
   ['mbtn-staff','mbtn-logs'].forEach(function(id){
     var el=document.getElementById(id); if(el)el.style.display=show?'':'none';
   });
+  drawSyncDot();
 }
 function setupFilters(p){
   fill(document.getElementById(p+'-cat'),uniq(PRODUCTS.map(function(x){return x.cat})),'All categories');
@@ -907,8 +912,7 @@ function renderLogs(){
   }).join('');
 }
 
-/* ══════════ SETTINGS (open to everyone; the Manager PIN field inside it
-   is the one part that stays manager-only) ══════════ */
+/* ══════════ SETTINGS (open to everyone) ══════════ */
 function renderSettings(){
   document.getElementById('se2-name').value=SETTINGS.bizName;
   document.getElementById('se2-line1').value=SETTINGS.line1;
@@ -920,22 +924,34 @@ function renderSettings(){
   document.getElementById('se2-when').value=SETTINGS.emailWhen;
   document.getElementById('se2-api').value=SHEETS_API_URL;
   document.getElementById('se2-staffemail').value=SHEETS_STAFF_EMAIL;
-  var canMgr=isManager();
-  var pinWrap=document.getElementById('se2-pin-wrap');
-  if(pinWrap)pinWrap.style.display=canMgr?'':'none';
-  var pinEl=document.getElementById('se2-pin');
-  // Left blank (not just hidden) for a worker view — the point of the PIN
-  // is defeated if it's sitting in the DOM for anyone to read via devtools.
-  if(pinEl)pinEl.value=canMgr?managerPin():'';
   drawSyncStatus();
 }
+/* Small green/red dot on the header refresh button — the same status the
+   Settings screen spells out in words, but visible from every screen so
+   you don't have to go into Settings just to see whether sync is working. */
+function drawSyncDot(){
+  var d=document.getElementById('sync-dot');
+  if(!d)return;
+  if(!sheetsConfigured()){d.className='sync-dot';return;}
+  d.className='sync-dot show'+(lastSyncOk?' ok':(lastSyncErr?' bad':''));
+}
 function drawSyncStatus(){
+  drawSyncDot();
   var el=document.getElementById('se2-syncstatus');
   if(!el)return;
-  if(!sheetsConfigured())el.textContent='Not synced yet — add the Sheets link above';
-  else if(lastSyncOk)el.textContent='Synced with Google Sheets';
-  else if(lastSyncErr)el.textContent='Sync failed: '+lastSyncErr;
-  else el.textContent='Not synced yet';
+  if(!sheetsConfigured()){
+    el.textContent='Not synced yet — add the Sheets link above';
+    el.className='fg syncstatus';
+  } else if(lastSyncOk){
+    el.innerHTML='<span class="syncdot"></span> Synced with Google Sheets';
+    el.className='fg syncstatus ok';
+  } else if(lastSyncErr){
+    el.textContent='Sync failed: '+lastSyncErr;
+    el.className='fg syncstatus bad';
+  } else {
+    el.textContent='Not synced yet';
+    el.className='fg syncstatus';
+  }
 }
 document.getElementById('se2-save').addEventListener('click',function(){
   SETTINGS.bizName=document.getElementById('se2-name').value.trim();
@@ -996,22 +1012,48 @@ function drawAdjust(){
   document.getElementById('aj-list').innerHTML=r.map(function(p){
     var c=counts[p.sku];
     var diff=(c===undefined||c===null||c==='')?null:(Number(c)-p.boxes);
-    return '<div class="card">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div>'+
+    var showDiff=diff!==null&&diff!==0;
+    return '<div class="card" data-sku="'+p.sku+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div>'+
     '<div class="c-meta">'+p.sku+' &middot; system says <b>'+p.boxes+'</b> boxes</div>'+
-    (diff!==null&&diff!==0?'<div class="c-meta" style="color:'+(diff<0?'#B4443F':'#26603a')+';font-weight:800">'+
-      (diff>0?'+':'')+diff+' box'+(Math.abs(diff)===1?'':'es')+' '+(diff<0?'missing':'extra')+'</div>':'')+
+    '<div class="c-meta diffline" style="'+(showDiff?('color:'+(diff<0?'#B4443F':'#26603a')+';font-weight:800'):'display:none')+'">'+
+      (showDiff?((diff>0?'+':'')+diff+' box'+(Math.abs(diff)===1?'':'es')+' '+(diff<0?'missing':'extra')):'')+'</div>'+
     '</div><div class="qty"><input type="number" inputmode="numeric" placeholder="count" value="'+(c===undefined?'':c)+'" '+
     'style="width:62px" enterkeyhint="done" onfocus="this.select()" onkeydown="if(event.key===&quot;Enter&quot;){event.preventDefault();this.blur();}" '+
     'oninput="setCount(\''+p.sku+'\',this.value)"></div></div>';
   }).join('')||'<div class="empty">No products match</div>';
   cdraw();
 }
+/* setCount fires on every keystroke. It used to call drawAdjust(), which
+   rebuilds #aj-list's innerHTML from scratch — destroying and recreating
+   the very input the user is mid-keystroke in, so it lost focus and every
+   digit after the first was typed into nothing. Typing "25" only ever
+   registered "2". Fixed the same way the Prices screen already does this
+   (see the comment above setCost/setSell): update the stored value and
+   patch just the one diff line in place, never touch the input itself. */
 function setCount(sku,v){
   if(v===''||v===null)delete counts[sku]; else counts[sku]=v;
-  var p=prod(sku); if(!p)return;
+  var p=prod(sku); if(!p){cdraw();return;}
   drawAdjustRow(sku); cdraw();
 }
-function drawAdjustRow(){ drawAdjust(); }
+function drawAdjustRow(sku){
+  var p=prod(sku); if(!p)return;
+  var card=findAdjCard(sku); if(!card)return;
+  var dl=card.querySelector('.diffline'); if(!dl)return;
+  var c=counts[sku];
+  var diff=(c===undefined||c===null||c==='')?null:(Number(c)-p.boxes);
+  if(diff!==null&&diff!==0){
+    dl.style.cssText='color:'+(diff<0?'#B4443F':'#26603a')+';font-weight:800';
+    dl.textContent=(diff>0?'+':'')+diff+' box'+(Math.abs(diff)===1?'':'es')+' '+(diff<0?'missing':'extra');
+  } else {
+    dl.style.cssText='display:none';
+    dl.textContent='';
+  }
+}
+function findAdjCard(sku){
+  var cards=document.querySelectorAll('#aj-list .card');
+  for(var i=0;i<cards.length;i++)if(cards[i].getAttribute('data-sku')===sku)return cards[i];
+  return null;
+}
 function cdraw(){
   var n=0,diffs=0;
   for(var k in counts){ n++; var p=prod(k); if(p&&Number(counts[k])!==p.boxes)diffs++; }
@@ -1468,22 +1510,15 @@ document.getElementById('se-save').addEventListener('click',function(){
 
 
 
-/* Manager PIN: a lightweight deterrent, not real login — this app has no
-   password system anywhere else either (staff just enter their email in
-   Settings). The PIN just raises the bar above "tap the hidden button" for
-   Staff/Logs specifically, and lets a manager temporarily unlock those two
-   screens on a phone currently synced as a worker. Ships with a default;
-   a manager should set a real one from Settings (manager-only field there). */
-var PIN_OVERRIDE=false;
-function managerPin(){try{return localStorage.getItem('uzb_mgr_pin')||'2468';}catch(e){return '2468';}}
-function isManager(){return PIN_OVERRIDE||!ME||ME.role!=='worker';}
-function requireManager(next){
-  if(isManager()){next();return;}
-  var p=prompt('Manager PIN required');
-  if(p===null)return;
-  if(p===managerPin()){PIN_OVERRIDE=true;kpis();toast('Manager unlocked for this session');next();}
-  else toast('Incorrect PIN');
-}
+/* Manager vs worker is decided by which app someone installed — this file
+   is served from either index.html (worker/default) or manager.html
+   (manager's separate home-screen icon), both built from this exact same
+   source. No PIN, no per-person login: with only a handful of staff, the
+   two links themselves ARE the access control — hand out the manager link
+   only to managers. (An earlier version also gated on the Staff tab's Role
+   column with a PIN fallback; dropped in favor of this simpler model.) */
+var APP_VARIANT=/manager\.html/i.test(location.pathname)?'manager':'worker';
+function isManager(){return APP_VARIANT==='manager';}
 var toastTimer=null;
 function toast(msg){
   var t=document.getElementById('toast');
