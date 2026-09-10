@@ -1111,6 +1111,34 @@ function postMovements(type,lines,extra,cb){
     })
     .catch(function(err){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,String(err));});
 }
+
+/* Near-live updates: Google Sheets has no push mechanism, so this polls
+   for fresh stock every 20s while the tab is open and visible (paused when
+   the phone is backgrounded, to save battery/data), then refreshes whatever
+   screen is currently open so a second device's change shows up without
+   anyone having to reload. */
+var POLL_MS=20000,pollTimer=null;
+var SCREEN_REFRESH={menu:kpis,stock:renderStock,move:renderMove,attn:renderAttn,hist:renderHist,
+  receive:renderReceive,adjust:renderAdjust,prices:renderPrices,custs:renderCusts,
+  products:renderProducts,staff:renderStaff};
+function refreshCurrentScreen(){
+  kpis();
+  var fn=SCREEN_REFRESH[lastScreen];
+  if(fn)fn();
+}
+function startPolling(){
+  stopPolling();
+  if(!sheetsConfigured())return;
+  pollTimer=setInterval(function(){
+    if(document.hidden)return;
+    syncFromServer(function(ok){if(ok)refreshCurrentScreen();});
+  },POLL_MS);
+}
+function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden&&sheetsConfigured())syncFromServer(function(ok){if(ok)refreshCurrentScreen();});
+});
+
 /* ── visual identity for categories and brands ── */
 var CATICON={
  'Beverages':      ['<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M6 7h11l-1.2 12.5a2 2 0 0 1-2 1.5H9.2a2 2 0 0 1-2-1.5L6 7z"/><path d="M15 7V3l2-1"/></svg>','#e3ecf5','#1D4E78'],
@@ -1743,6 +1771,7 @@ document.getElementById('se2-save').addEventListener('click',function(){
   ME.email=SHEETS_STAFF_EMAIL;
   kpis(); toast('Settings saved');
   if(sheetsConfigured())syncFromServer(function(){drawSyncStatus();});
+  startPolling();
   go('menu');
 });
 document.getElementById('se2-syncnow').addEventListener('click',function(){
@@ -2969,6 +2998,7 @@ setupFilters('stk');setupFilters('mv');
 wireCatBar('stk',renderStock);wireCatBar('mv',renderMove);
 kpis();drawBasket();
 if(sheetsConfigured())syncFromServer(function(ok,err){if(!ok)toast('Sheets sync failed — showing last-known stock');});
+startPolling();
 </script>
 <script>
 if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
