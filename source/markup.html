@@ -163,6 +163,7 @@
     <div class="screen" id="s-conf">
       <div class="conf">
         <div class="conf-badge" id="cf-badge">
+          <img class="cf-gif" id="cf-gif" alt="" onerror="this.style.display='none';document.getElementById('cf-badge').classList.remove('gif')">
           <svg viewBox="0 0 48 48" class="conf-badge-inner"><circle class="conf-badge-circle" cx="24" cy="24" r="19"></circle><path class="conf-badge-check" d="M15 24.5 L21 30.5 L33 17.5"></path></svg>
           <i class="cf-c" style="--dx:-34px;--dy:-18px;background:#0F5C5C;animation-delay:.05s"></i>
           <i class="cf-c" style="--dx:-14px;--dy:-34px;background:#C1622D;animation-delay:.07s"></i>
@@ -175,7 +176,7 @@
           <i class="cf-c" style="--dx:-40px;--dy:-2px;background:#26603a;animation-delay:.13s"></i>
           <i class="cf-c" style="--dx:2px;--dy:-40px;background:#1D4E78;animation-delay:.14s"></i>
         </div>
-        <div style="font-size:15px;font-weight:800;margin-bottom:6px">Movement confirmed</div>
+        <div style="font-size:15px;font-weight:800;margin-bottom:6px" id="cf-title">Movement confirmed</div>
         <div style="font-size:12px;color:#6f6b64;font-weight:600;margin-bottom:4px" id="cf-id"></div>
         <div style="font-size:13px;color:#0F5C5C;font-weight:800;margin-bottom:20px" id="cf-sum"></div>
         <div class="mailbox" id="cf-mail"></div>

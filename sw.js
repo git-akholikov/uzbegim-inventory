@@ -15,7 +15,9 @@ var SHELL = [
   './manifest-manager.json',
   './icon-192-manager.png',
   './icon-512-manager.png',
-  './icon-maskable-512-manager.png'
+  './icon-maskable-512-manager.png',
+  './movement-confirm.gif',
+  './delivery-confirm.gif'
 ];
 
 self.addEventListener('install', function(e){

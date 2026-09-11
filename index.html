@@ -33,18 +33,19 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .syncstatus.ok{color:#1f7a44;font-weight:700}
 .syncstatus.bad{color:#a83b34;font-weight:700}
 .syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3fb56d;flex:0 0 auto}
-/* In-header sync indicator, between the title and the refresh button.
-   When everything is synced it's just a small green dot — no text, no
-   noise. The moment there's something to say (no connection, nothing
-   configured, a failed/pending save) it becomes a short red pill with a
-   couple of words, since that's the point where you actually need to
-   know. Tapping it opens Settings or retries right now. */
-.hsync{display:flex;align-items:center;gap:5px;flex:0 0 auto;cursor:pointer;font-size:10.5px;font-weight:800;letter-spacing:.2px;padding:5px 6px;border-radius:20px;transition:background .15s,color .15s;max-width:40%}
+/* In-header sync indicator, between the title and the refresh button —
+   same translucent chip as the refresh button next to it (same
+   background, same 8px corners, same tap-state), so the two read as one
+   family of header controls. Status is carried by colour, not by a
+   different shape: a quiet green dot when everything's synced, a red dot
+   with a couple of words when something needs attention. Tapping it
+   opens Settings or retries right now. */
+.hsync{display:flex;align-items:center;gap:5px;flex:0 0 auto;cursor:pointer;font-size:10.5px;font-weight:800;letter-spacing:.2px;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.2);transition:background .15s,color .15s;max-width:40%}
+.hsync:active{background:rgba(255,255,255,.35)}
 .hsync .ic{font-size:9px;line-height:1;color:#7bd0a0}
-.hsync .tx{display:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hsync.bad{background:rgba(226,104,95,.22);padding:5px 10px}
+.hsync .tx{display:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff}
 .hsync.bad .ic{color:#ff8f86}
-.hsync.bad .tx{display:inline;color:#fff}
+.hsync.bad .tx{display:inline}
 /* Badge on a Products / Stock / History row that was saved on this device
    but hasn't reached the Sheet yet — cleared automatically once it syncs. */
 .pend-badge{display:inline-block;background:#a83b34;color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.4px;padding:2px 6px;border-radius:5px;vertical-align:middle;margin-left:2px}
@@ -243,6 +244,13 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 @keyframes cf-pop{0%{transform:scale(0)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
 .cf-c{position:absolute;left:50%;top:26px;width:6px;height:6px;border-radius:1px;opacity:0;animation:cf-fly .85s ease-out both}
 @keyframes cf-fly{0%{opacity:0;transform:translate(-50%,0) rotate(0)}8%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(var(--dy) + 46px)) rotate(220deg)}}
+/* Confirmation GIF (movement / delivery) — replaces the little checkmark
+   badge above when set. The badge grows to fit it; the checkmark+confetti
+   stay in the markup as a fallback if a GIF fails to load. */
+.cf-gif{display:none;width:100%;height:100%;object-fit:contain;border-radius:14px;animation:cf-pop .4s cubic-bezier(.34,1.56,.64,1) both}
+.conf-badge.gif{width:150px;height:150px}
+.conf-badge.gif .cf-gif{display:block}
+.conf-badge.gif .conf-badge-inner,.conf-badge.gif .cf-c{display:none}
 
 /* ══════════════ RESPONSIVE ══════════════
    Phone layout is the default above. These rules only add
@@ -684,6 +692,7 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
     <div class="screen" id="s-conf">
       <div class="conf">
         <div class="conf-badge" id="cf-badge">
+          <img class="cf-gif" id="cf-gif" alt="" onerror="this.style.display='none';document.getElementById('cf-badge').classList.remove('gif')">
           <svg viewBox="0 0 48 48" class="conf-badge-inner"><circle class="conf-badge-circle" cx="24" cy="24" r="19"></circle><path class="conf-badge-check" d="M15 24.5 L21 30.5 L33 17.5"></path></svg>
           <i class="cf-c" style="--dx:-34px;--dy:-18px;background:#0F5C5C;animation-delay:.05s"></i>
           <i class="cf-c" style="--dx:-14px;--dy:-34px;background:#C1622D;animation-delay:.07s"></i>
@@ -696,7 +705,7 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
           <i class="cf-c" style="--dx:-40px;--dy:-2px;background:#26603a;animation-delay:.13s"></i>
           <i class="cf-c" style="--dx:2px;--dy:-40px;background:#1D4E78;animation-delay:.14s"></i>
         </div>
-        <div style="font-size:15px;font-weight:800;margin-bottom:6px">Movement confirmed</div>
+        <div style="font-size:15px;font-weight:800;margin-bottom:6px" id="cf-title">Movement confirmed</div>
         <div style="font-size:12px;color:#6f6b64;font-weight:600;margin-bottom:4px" id="cf-id"></div>
         <div style="font-size:13px;color:#0F5C5C;font-weight:800;margin-bottom:20px" id="cf-sum"></div>
         <div class="mailbox" id="cf-mail"></div>
@@ -1884,7 +1893,7 @@ document.getElementById('rv2-go').addEventListener('click',function(){
   document.getElementById('cf-mail').innerHTML='&#128190; Stock increased. Saved as <b>'+num+'</b> in History.';
   rbasket={}; RCOST={};
   document.getElementById('rc-ref').value=''; document.getElementById('rv2-notes').value='';
-  kpis(); go('conf');
+  kpis(); showConfirm('delivery'); go('conf');
 });
 
 
@@ -2317,7 +2326,7 @@ document.getElementById('cb-go').addEventListener('click',function(){
   document.getElementById('cf-sum').textContent=lines.length+' product'+(lines.length===1?'':'s')+' adjusted  |  '+bx+' boxes';
   document.getElementById('cf-acts').style.display='none';
   document.getElementById('cf-mail').innerHTML='&#128190; Stock now matches your count. Saved as <b>'+num+'</b>.';
-  kpis(); go('conf');
+  kpis(); showConfirm('adjustment'); go('conf');
 });
 
 /* ══════════ PRICES (visible to everyone) ══════════ */
@@ -2855,8 +2864,25 @@ document.getElementById('rv-go').addEventListener('click',function(){
   document.getElementById('cf-sum').textContent=bx+' boxes  |  '+un+' units moved out';
   document.getElementById('cf-acts').style.display='none';
   document.getElementById('cf-mail').innerHTML='&#128190; Stock decreased. Saved as <b>'+num+'</b> in Movement history.';
-  basket={};document.getElementById('rv-notes').value='';kpis();go('conf');
+  basket={};document.getElementById('rv-notes').value='';kpis();showConfirm('movement');go('conf');
 });
+/* Swaps the little checkmark badge on the shared confirmation screen for a
+   GIF — a truck driving off for stock that moved out to a customer or
+   another location, a warehouse receiving boxes for a delivery that just
+   came in — and sets the matching title. Stock-count adjustments aren't
+   either of those, so they keep the plain checkmark+confetti animation.
+   If a GIF file is missing (renamed, deleted), the img's onerror in
+   markup.html drops the 'gif' class and the checkmark shows instead, so
+   this never breaks the confirmation screen. */
+function showConfirm(kind){
+  var badge=document.getElementById('cf-badge'),img=document.getElementById('cf-gif'),title=document.getElementById('cf-title');
+  if(title)title.textContent=kind==='delivery'?'Delivery confirmed':kind==='movement'?'Movement confirmed':'Stock count saved';
+  if(badge)badge.classList.remove('gif');
+  if(img&&badge&&(kind==='delivery'||kind==='movement')){
+    img.src=kind==='delivery'?'delivery-confirm.gif':'movement-confirm.gif';
+    badge.classList.add('gif');
+  }
+}
 document.getElementById('cf-back').addEventListener('click',function(){go('menu')});
 document.getElementById('cf-open').addEventListener('click',function(){pdfAction(lastMovement,'open')});
 document.getElementById('cf-save').addEventListener('click',function(){pdfAction(lastMovement,'save')});

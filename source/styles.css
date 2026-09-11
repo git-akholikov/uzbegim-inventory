@@ -20,18 +20,19 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .syncstatus.ok{color:#1f7a44;font-weight:700}
 .syncstatus.bad{color:#a83b34;font-weight:700}
 .syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3fb56d;flex:0 0 auto}
-/* In-header sync indicator, between the title and the refresh button.
-   When everything is synced it's just a small green dot — no text, no
-   noise. The moment there's something to say (no connection, nothing
-   configured, a failed/pending save) it becomes a short red pill with a
-   couple of words, since that's the point where you actually need to
-   know. Tapping it opens Settings or retries right now. */
-.hsync{display:flex;align-items:center;gap:5px;flex:0 0 auto;cursor:pointer;font-size:10.5px;font-weight:800;letter-spacing:.2px;padding:5px 6px;border-radius:20px;transition:background .15s,color .15s;max-width:40%}
+/* In-header sync indicator, between the title and the refresh button —
+   same translucent chip as the refresh button next to it (same
+   background, same 8px corners, same tap-state), so the two read as one
+   family of header controls. Status is carried by colour, not by a
+   different shape: a quiet green dot when everything's synced, a red dot
+   with a couple of words when something needs attention. Tapping it
+   opens Settings or retries right now. */
+.hsync{display:flex;align-items:center;gap:5px;flex:0 0 auto;cursor:pointer;font-size:10.5px;font-weight:800;letter-spacing:.2px;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.2);transition:background .15s,color .15s;max-width:40%}
+.hsync:active{background:rgba(255,255,255,.35)}
 .hsync .ic{font-size:9px;line-height:1;color:#7bd0a0}
-.hsync .tx{display:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hsync.bad{background:rgba(226,104,95,.22);padding:5px 10px}
+.hsync .tx{display:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff}
 .hsync.bad .ic{color:#ff8f86}
-.hsync.bad .tx{display:inline;color:#fff}
+.hsync.bad .tx{display:inline}
 /* Badge on a Products / Stock / History row that was saved on this device
    but hasn't reached the Sheet yet — cleared automatically once it syncs. */
 .pend-badge{display:inline-block;background:#a83b34;color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.4px;padding:2px 6px;border-radius:5px;vertical-align:middle;margin-left:2px}
@@ -230,6 +231,13 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 @keyframes cf-pop{0%{transform:scale(0)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
 .cf-c{position:absolute;left:50%;top:26px;width:6px;height:6px;border-radius:1px;opacity:0;animation:cf-fly .85s ease-out both}
 @keyframes cf-fly{0%{opacity:0;transform:translate(-50%,0) rotate(0)}8%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(var(--dy) + 46px)) rotate(220deg)}}
+/* Confirmation GIF (movement / delivery) — replaces the little checkmark
+   badge above when set. The badge grows to fit it; the checkmark+confetti
+   stay in the markup as a fallback if a GIF fails to load. */
+.cf-gif{display:none;width:100%;height:100%;object-fit:contain;border-radius:14px;animation:cf-pop .4s cubic-bezier(.34,1.56,.64,1) both}
+.conf-badge.gif{width:150px;height:150px}
+.conf-badge.gif .cf-gif{display:block}
+.conf-badge.gif .conf-badge-inner,.conf-badge.gif .cf-c{display:none}
 
 /* ══════════════ RESPONSIVE ══════════════
    Phone layout is the default above. These rules only add

@@ -808,7 +808,7 @@ document.getElementById('rv2-go').addEventListener('click',function(){
   document.getElementById('cf-mail').innerHTML='&#128190; Stock increased. Saved as <b>'+num+'</b> in History.';
   rbasket={}; RCOST={};
   document.getElementById('rc-ref').value=''; document.getElementById('rv2-notes').value='';
-  kpis(); go('conf');
+  kpis(); showConfirm('delivery'); go('conf');
 });
 
 
@@ -1241,7 +1241,7 @@ document.getElementById('cb-go').addEventListener('click',function(){
   document.getElementById('cf-sum').textContent=lines.length+' product'+(lines.length===1?'':'s')+' adjusted  |  '+bx+' boxes';
   document.getElementById('cf-acts').style.display='none';
   document.getElementById('cf-mail').innerHTML='&#128190; Stock now matches your count. Saved as <b>'+num+'</b>.';
-  kpis(); go('conf');
+  kpis(); showConfirm('adjustment'); go('conf');
 });
 
 /* ══════════ PRICES (visible to everyone) ══════════ */
@@ -1779,8 +1779,25 @@ document.getElementById('rv-go').addEventListener('click',function(){
   document.getElementById('cf-sum').textContent=bx+' boxes  |  '+un+' units moved out';
   document.getElementById('cf-acts').style.display='none';
   document.getElementById('cf-mail').innerHTML='&#128190; Stock decreased. Saved as <b>'+num+'</b> in Movement history.';
-  basket={};document.getElementById('rv-notes').value='';kpis();go('conf');
+  basket={};document.getElementById('rv-notes').value='';kpis();showConfirm('movement');go('conf');
 });
+/* Swaps the little checkmark badge on the shared confirmation screen for a
+   GIF — a truck driving off for stock that moved out to a customer or
+   another location, a warehouse receiving boxes for a delivery that just
+   came in — and sets the matching title. Stock-count adjustments aren't
+   either of those, so they keep the plain checkmark+confetti animation.
+   If a GIF file is missing (renamed, deleted), the img's onerror in
+   markup.html drops the 'gif' class and the checkmark shows instead, so
+   this never breaks the confirmation screen. */
+function showConfirm(kind){
+  var badge=document.getElementById('cf-badge'),img=document.getElementById('cf-gif'),title=document.getElementById('cf-title');
+  if(title)title.textContent=kind==='delivery'?'Delivery confirmed':kind==='movement'?'Movement confirmed':'Stock count saved';
+  if(badge)badge.classList.remove('gif');
+  if(img&&badge&&(kind==='delivery'||kind==='movement')){
+    img.src=kind==='delivery'?'delivery-confirm.gif':'movement-confirm.gif';
+    badge.classList.add('gif');
+  }
+}
 document.getElementById('cf-back').addEventListener('click',function(){go('menu')});
 document.getElementById('cf-open').addEventListener('click',function(){pdfAction(lastMovement,'open')});
 document.getElementById('cf-save').addEventListener('click',function(){pdfAction(lastMovement,'save')});
