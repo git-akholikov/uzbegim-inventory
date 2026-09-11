@@ -86,6 +86,20 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .frow select,.frow input{flex:1;min-width:0;padding:8px 5px;border:1px solid #e2ded6;border-radius:10px;font-size:11px;font-weight:700;background:#fff;color:#4a463f;font-family:inherit}
 .frow select:focus,.frow input:focus{outline:none;border-color:#0F5C5C}
 .fcount{font-size:10px;color:#8a8780;font-weight:700;margin-top:7px;letter-spacing:.2px}
+/* Inventory report: From/To date fields, each with its own small label so
+   the two inputs don't run together on a narrow phone screen (previously
+   they were two bare date inputs side by side with nothing distinguishing
+   them), plus the 7/30-day quick-fill buttons and the movement-type view
+   toggle, styled as small pill buttons. */
+.quickrange{gap:8px}
+.qbtn2{flex:0 0 auto;padding:6px 14px;border-radius:999px;border:1px solid #d7d2c6;background:#fff;color:#4a463f;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit}
+.qbtn2:active{background:#f0eee8}
+.qbtn2.on{background:#0F5C5C;border-color:#0F5C5C;color:#fff}
+.daterange{gap:8px}
+.datefield{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.dlabel{font-size:9px;font-weight:800;color:#8a8780;text-transform:uppercase;letter-spacing:.4px;padding-left:2px}
+.datefield input[type=date]{width:100%;min-width:0;padding:8px 5px;border:1px solid #e2ded6;border-radius:10px;font-size:11px;font-weight:700;background:#fff;color:#4a463f;font-family:inherit}
+.datefield input[type=date]:focus{outline:none;border-color:#0F5C5C}
 .sticky{position:sticky;top:-12px;z-index:12;background:#faf9f7;padding:12px 0 9px;margin:-12px 0 0;box-shadow:0 8px 12px -10px rgba(0,0,0,.28)}
 .list{flex:1;display:flex;flex-direction:column;gap:6px;padding-top:6px;align-content:start}
 .card{background:#fff;border:1px solid #e8e4dc;border-radius:13px;padding:11px 12px;display:flex;align-items:center;gap:11px;box-shadow:0 1px 2px rgba(0,0,0,.035)}
@@ -173,12 +187,14 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .hi-invoice{border-left-color:#C1622D}
 .hi-transfer{border-left-color:#1D4E78}
 .hi-receipt{border-left-color:#26603a}
+.hi-adjustment{border-left-color:#6b4c9a}
 .h-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 .h-id{font-size:12.5px;font-weight:800}
 .h-tag{font-size:8.5px;font-weight:800;padding:3px 8px;border-radius:20px;letter-spacing:.4px}
 .t-invoice{background:#f9ddc6;color:#8f451c}
 .t-transfer{background:#dde8f2;color:#1d4e78}
 .t-receipt{background:#e4f0e6;color:#26603a}
+.t-adjustment{background:#ece3f5;color:#5a3d80}
 .h-meta{font-size:10.5px;color:#6f6b64;font-weight:600}
 .drow{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #efece6;font-size:12px}
 .drow span:first-child{color:#6f6b64;font-weight:600}

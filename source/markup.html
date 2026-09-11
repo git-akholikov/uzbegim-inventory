@@ -226,14 +226,14 @@
           <div class="fg"><label class="lab">Category</label>
             <div class="searchrow"><select class="ctrl" id="np-cat"></select><button class="scanbtn" onclick="showInlineAdd('np-cat')">+ New</button></div>
             <div class="searchrow" id="np-cat-newrow" style="display:none;margin-top:6px">
-              <input class="ctrl" id="np-cat-newinput" placeholder="New category name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-cat','cat');}">
+              <input class="ctrl" id="np-cat-newinput" placeholder="New category name" autocapitalize="words" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-cat','cat');}">
               <button class="scanbtn" onclick="confirmInlineAdd('np-cat','cat')">Add</button>
               <button class="scanbtn" onclick="cancelInlineAdd('np-cat')">Cancel</button>
             </div></div>
           <div class="fg"><label class="lab">Brand</label>
             <div class="searchrow"><select class="ctrl" id="np-brand"></select><button class="scanbtn" onclick="showInlineAdd('np-brand')">+ New</button></div>
             <div class="searchrow" id="np-brand-newrow" style="display:none;margin-top:6px">
-              <input class="ctrl" id="np-brand-newinput" placeholder="New brand name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-brand','brand');}">
+              <input class="ctrl" id="np-brand-newinput" placeholder="New brand name" autocapitalize="words" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-brand','brand');}">
               <button class="scanbtn" onclick="confirmInlineAdd('np-brand','brand')">Add</button>
               <button class="scanbtn" onclick="cancelInlineAdd('np-brand')">Cancel</button>
             </div></div>
@@ -279,8 +279,19 @@
       <div class="sticky">
         <input class="inp" id="hs-q" placeholder="Search movement or destination">
         <div class="frow frow-4"><select id="hs-type"></select><select id="hs-cust"></select><select id="hs-product"></select><select id="hs-brand"></select></div>
-        <div class="frow"><input type="date" id="hs-from"><input type="date" id="hs-to"></div>
-        <select id="hs-view" style="display:none" aria-hidden="true"><option value="doc">List every movement</option></select>
+        <div class="frow quickrange">
+          <button type="button" class="qbtn2" data-days="7" onclick="quickDateRange(7,this)">7 days</button>
+          <button type="button" class="qbtn2" data-days="30" onclick="quickDateRange(30,this)">30 days</button>
+        </div>
+        <div class="frow daterange">
+          <div class="datefield"><span class="dlabel">From</span><input type="date" id="hs-from"></div>
+          <div class="datefield"><span class="dlabel">To</span><input type="date" id="hs-to"></div>
+        </div>
+        <div class="frow quickrange">
+          <button type="button" class="qbtn2 vbtn on" data-view="doc" onclick="setHistView('doc',this)">All movements</button>
+          <button type="button" class="qbtn2 vbtn" data-view="movers" onclick="setHistView('movers',this)">Compare products</button>
+        </div>
+        <select id="hs-view" style="display:none" aria-hidden="true"><option value="doc">List every movement</option><option value="movers">Compare products</option></select>
         <div class="fcount" id="hs-count"></div>
       </div>
       <div class="list" id="hs-list"></div>
@@ -413,14 +424,14 @@
       <div class="fg"><label class="lab">Category <span class="req">required</span></label>
         <div class="searchrow"><select class="ctrl" id="pe-cat"></select><button class="scanbtn" onclick="showInlineAdd('pe-cat')">+ New</button></div>
         <div class="searchrow" id="pe-cat-newrow" style="display:none;margin-top:6px">
-          <input class="ctrl" id="pe-cat-newinput" placeholder="New category name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-cat','cat');}">
+          <input class="ctrl" id="pe-cat-newinput" placeholder="New category name" autocapitalize="words" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-cat','cat');}">
           <button class="scanbtn" onclick="confirmInlineAdd('pe-cat','cat')">Add</button>
           <button class="scanbtn" onclick="cancelInlineAdd('pe-cat')">Cancel</button>
         </div></div>
       <div class="fg"><label class="lab">Brand <span class="req">required</span></label>
         <div class="searchrow"><select class="ctrl" id="pe-brand"></select><button class="scanbtn" onclick="showInlineAdd('pe-brand')">+ New</button></div>
         <div class="searchrow" id="pe-brand-newrow" style="display:none;margin-top:6px">
-          <input class="ctrl" id="pe-brand-newinput" placeholder="New brand name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-brand','brand');}">
+          <input class="ctrl" id="pe-brand-newinput" placeholder="New brand name" autocapitalize="words" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-brand','brand');}">
           <button class="scanbtn" onclick="confirmInlineAdd('pe-brand','brand')">Add</button>
           <button class="scanbtn" onclick="cancelInlineAdd('pe-brand')">Cancel</button>
         </div></div>
