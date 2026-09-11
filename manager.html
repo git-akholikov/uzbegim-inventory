@@ -3385,6 +3385,14 @@ function applyPreset(v){
   document.getElementById('st-from').value=from;document.getElementById('st-to').value=to;
   renderStats();
 }
+/* "Compare products" on the Inventory report: pick a category, see the
+   chosen period broken down by brand (every flavor/variant of a brand
+   summed together, highest to lowest), then tap a brand to drill "By
+   product" down to its individual items. Only boxes that actually left
+   the warehouse count (customer stock-outs + internal transfers). */
+var statsCat='',statsBrand='';
+function onStatsCatChange(sel){statsCat=sel.value;statsBrand='';renderStats();}
+function pickStatsBrand(brand){statsBrand=(statsBrand===brand)?'':brand;renderStats();}
 function daysBetween(a,b){return Math.max(1,Math.round((new Date(b)-new Date(a))/86400000)+1);}
 function sparkline(byDay,f,t){
   var out=[],d=new Date(f),endD=new Date(t),n=0;
@@ -3477,8 +3485,66 @@ function renderStats(){
 
   H+='<div class="stat"><div class="stat-l">Daily movement</div>'+sparkline(byDay,f,t)+'<div class="stat-s">'+moveCount+' movements recorded in '+days+' days</div></div>';
   H+='<div class="sechead">Velocity by category</div><div class="stat">'+velocityRank(byCat,7)+'</div>';
-  H+='<div class="sechead">Velocity by brand</div><div class="stat">'+velocityRank(byBrand,7)+'</div>';
-  H+='<div class="sechead">Velocity by product</div><div class="stat">'+velocityRank(byProd,7)+'</div>';
+
+  // ---- Compare products: category -> by-brand rollup -> by-product drill-down ----
+  var cmpLines=[];
+  rows.forEach(function(h){
+    if(h.type!=='invoice'&&h.type!=='transfer')return;
+    h.lines.forEach(function(l){
+      var p=prod(l.sku);
+      var pcat=(p&&p.cat)||l.cat||'';
+      var pbrand=(p&&p.brand)||l.brand||'';
+      cmpLines.push({sku:l.sku,name:l.name,brand:pbrand,cat:pcat,boxes:l.boxes,hid:h.id,date:h.date});
+    });
+  });
+  var cmpCats=uniq(PRODUCTS.map(function(p){return p.cat;}));
+  if(statsCat&&cmpCats.indexOf(statsCat)===-1)statsCat='';
+  var cmpScoped=statsCat?cmpLines.filter(function(l){return l.cat===statsCat;}):cmpLines;
+  if(statsBrand&&!cmpScoped.some(function(l){return l.brand===statsBrand;}))statsBrand='';
+  var cmpB={};
+  cmpScoped.forEach(function(l){
+    if(!l.brand)return;
+    var o=cmpB[l.brand]||(cmpB[l.brand]={name:l.brand,outB:0,moves:{},skus:{}});
+    o.outB+=l.boxes;o.moves[l.hid]=1;o.skus[l.sku]=1;
+  });
+  var cmpAB=[];for(var kcb in cmpB)cmpAB.push(cmpB[kcb]);
+  cmpAB.sort(function(x,y){return y.outB-x.outB;});
+  var cmpMaxB=Math.max.apply(null,cmpAB.map(function(x){return x.outB;}))||1;
+  var cmpPoolLines=statsBrand?cmpScoped.filter(function(l){return l.brand===statsBrand;}):cmpScoped;
+  var cmpP={};
+  cmpPoolLines.forEach(function(l){
+    var o=cmpP[l.sku]||(cmpP[l.sku]={sku:l.sku,name:l.name,brand:l.brand,cat:l.cat,outB:0,moves:{},last:l.date});
+    o.outB+=l.boxes;o.moves[l.hid]=1;if(l.date>o.last)o.last=l.date;
+  });
+  var cmpAP=[];for(var kcp in cmpP)cmpAP.push(cmpP[kcp]);
+  cmpAP.sort(function(x,y){return y.outB-x.outB;});
+  var cmpMaxP=Math.max.apply(null,cmpAP.map(function(x){return x.outB;}))||1;
+
+  H+='<div class="sechead">Compare products</div>';
+  H+='<select class="inp" id="st-cat" onchange="onStatsCatChange(this)" style="margin-bottom:9px"><option value="">All categories</option>'+
+    cmpCats.map(function(c){return '<option value="'+c+'"'+(c===statsCat?' selected':'')+'>'+c+'</option>';}).join('')+'</select>';
+  H+='<div class="sechead">By brand'+(statsCat?' &middot; '+statsCat:'')+'</div><div class="stat">'+
+    (cmpAB.length?cmpAB.map(function(o){
+      var nSkus=Object.keys(o.skus).length,nMoves=Object.keys(o.moves).length,on=o.name===statsBrand;
+      return '<div class="hitem mv-brand'+(on?' on':'')+'" style="border-left-color:#0F5C5C" onclick="pickStatsBrand('+jsAttrStr(o.name)+')"><div class="h-top" style="align-items:center;gap:9px">'+
+        '<span class="h-id" style="flex:1">'+o.name+(on?' &#10003;':'')+'</span>'+
+        '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nSkus+' item'+(nSkus===1?'':'s')+'</span></div>'+
+        '<div class="h-meta">'+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; '+nMoves+' move'+(nMoves===1?'':'s')+'</div>'+
+        '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/cmpMaxB)+'%"></i></div>'+
+      '</div>';
+    }).join(''):'<div class="stat-s">No movement in this period'+(statsCat?' for '+statsCat:'')+'</div>')+'</div>';
+
+  H+='<div class="sechead">By product'+(statsBrand?' &middot; '+statsBrand:(statsCat?' &middot; '+statsCat:''))+
+    (statsBrand?'<span class="mv-clear" onclick="pickStatsBrand('+jsAttrStr(statsBrand)+')">Show all brands &times;</span>':'')+'</div><div class="stat">'+
+    (cmpAP.length?cmpAP.map(function(o){
+      var nMoves=Object.keys(o.moves).length;
+      return '<div class="hitem" style="border-left-color:#0F5C5C"><div class="h-top" style="align-items:center;gap:9px">'+
+        icoCat(o.cat,'sm')+'<span class="h-id" style="flex:1">'+o.name+'</span>'+
+        '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nMoves+' MOVE'+(nMoves===1?'':'S')+'</span></div>'+
+        '<div class="h-meta">'+(o.brand?o.brand+' &middot; ':'')+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; last '+nice(o.last)+'</div>'+
+        '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/cmpMaxP)+'%"></i></div>'+
+      '</div>';
+    }).join(''):'<div class="stat-s">No products moved'+(statsBrand?' for '+statsBrand:'')+'</div>')+'</div>';
 
   var insights=[];
   if(out)insights.push(['d-bad',out+' product'+(out===1?' is':'s are')+' out of stock.']);
