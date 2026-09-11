@@ -19,7 +19,7 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .header{background:linear-gradient(135deg,#0F5C5C,#0b4747);color:#fff;padding:13px 14px;display:flex;align-items:center;gap:10px;flex:0 0 auto;z-index:20;box-shadow:0 2px 10px rgba(0,0,0,.10)}
 .hback{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;display:none;width:26px;font-weight:700}
 .hback.show{display:block}
-.htitle{flex:1;font-size:15px;font-weight:700}
+.htitle{flex:1;min-width:0;font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .langs{display:flex;gap:4px}
 .lang{background:rgba(255,255,255,.2);border:none;color:#fff;font-size:10px;font-weight:700;padding:3px 6px;border-radius:4px;cursor:pointer}
 .lang.on{background:rgba(255,255,255,.45)}
@@ -27,27 +27,24 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .refresh-btn:active{background:rgba(255,255,255,.35)}
 .refresh-btn.spinning svg{animation:refresh-spin .7s linear infinite}
 @keyframes refresh-spin{to{transform:rotate(360deg)}}
-/* Small always-visible dot on the header refresh button so sync status is
-   readable from any screen, not just buried in Settings. Hidden entirely
-   until Sheets sync is configured (there's nothing to report before then). */
-.sync-dot{position:absolute;top:3px;right:3px;width:8px;height:8px;border-radius:50%;background:#c9c4b8;border:1.5px solid #0b4747;display:none}
-.sync-dot.show{display:block}
-.sync-dot.ok{background:#3fb56d}
-.sync-dot.bad{background:#e2685f}
-/* Sync status line inside Settings — same color language as the dot above. */
+/* Sync status line inside Settings — same color language as the header
+   indicator below. */
 .syncstatus{color:#8a8780;font-size:13px;display:flex;align-items:center;gap:6px}
 .syncstatus.ok{color:#1f7a44;font-weight:700}
 .syncstatus.bad{color:#a83b34;font-weight:700}
 .syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3fb56d;flex:0 0 auto}
-/* Big, always-visible sync banner under the header (every screen) — the
-   answer to "I must know when it is not synced or not": green only when
-   fully synced with nothing waiting, red with a plain reason otherwise. */
-.syncstrip{display:flex;align-items:center;gap:9px;padding:9px 14px;font-size:12.5px;font-weight:700;line-height:1.35;cursor:pointer;flex:0 0 auto;transition:background .15s,color .15s}
-.syncstrip .ic{font-size:14px;line-height:1;flex:0 0 auto}
-.syncstrip .tx{flex:1;min-width:0}
-.syncstrip .ar{font-size:16px;font-weight:800;flex:0 0 auto}
-.syncstrip.ok{background:#eaf6ee;color:#1f7a44}
-.syncstrip.bad{background:#fbeceb;color:#a83b34}
+/* In-header sync indicator, between the title and the refresh button.
+   When everything is synced it's just a small green dot — no text, no
+   noise. The moment there's something to say (no connection, nothing
+   configured, a failed/pending save) it becomes a short red pill with a
+   couple of words, since that's the point where you actually need to
+   know. Tapping it opens Settings or retries right now. */
+.hsync{display:flex;align-items:center;gap:5px;flex:0 0 auto;cursor:pointer;font-size:10.5px;font-weight:800;letter-spacing:.2px;padding:5px 6px;border-radius:20px;transition:background .15s,color .15s;max-width:40%}
+.hsync .ic{font-size:9px;line-height:1;color:#7bd0a0}
+.hsync .tx{display:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hsync.bad{background:rgba(226,104,95,.22);padding:5px 10px}
+.hsync.bad .ic{color:#ff8f86}
+.hsync.bad .tx{display:inline;color:#fff}
 /* Badge on a Products / Stock / History row that was saved on this device
    but hasn't reached the Sheet yet — cleared automatically once it syncs. */
 .pend-badge{display:inline-block;background:#a83b34;color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.4px;padding:2px 6px;border-radius:5px;vertical-align:middle;margin-left:2px}
@@ -213,6 +210,10 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .drow span:first-child{color:#6f6b64;font-weight:600}
 .drow span:last-child{font-weight:700}
 .sechead{font-size:9.5px;font-weight:800;color:#8a8780;letter-spacing:.9px;text-transform:uppercase;margin:16px 0 8px}
+.sechead:first-child{margin-top:2px}
+.mv-clear{float:right;text-transform:none;letter-spacing:0;font-weight:700;color:#0F5C5C;cursor:pointer}
+.mv-brand{cursor:pointer}
+.mv-brand.on{border-left-color:#0F5C5C!important;background:#f0f7f6}
 .empty{text-align:center;padding:34px 12px;color:#8a8780;font-size:12px;font-weight:600}
 .conf{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:20px;max-width:440px;margin:0 auto;width:100%}
 .bar{height:7px;background:#e2ded6;border-radius:4px;overflow:hidden;margin-top:5px}
@@ -537,9 +538,9 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
   <div class="header">
     <button class="hback" id="back">&#8592;</button>
     <div class="htitle" id="title">Uzbegim Inventory</div>
-    <button class="refresh-btn" id="btn-refresh" title="Refresh now" aria-label="Refresh now"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg><span class="sync-dot" id="sync-dot" title="Sync status"></span></button>
+    <div class="hsync" id="sync-strip" onclick="tapSyncStrip()" title="Sync status"><span class="ic">&#9679;</span><span class="tx"></span></div>
+    <button class="refresh-btn" id="btn-refresh" title="Refresh now" aria-label="Refresh now"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg></button>
   </div>
-  <div class="syncstrip bad" id="sync-strip" onclick="tapSyncStrip()"><span class="ic">&#9888;</span><span class="tx">Checking sync status&hellip;</span><span class="ar">&rsaquo;</span></div>
   <div class="body" id="body">
 
     <div class="screen on" id="s-menu">
@@ -798,7 +799,8 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
     <div class="screen" id="s-hist">
       <div class="sticky">
         <input class="inp" id="hs-q" placeholder="Search movement or destination">
-        <div class="frow frow-4"><select id="hs-type"></select><select id="hs-cust"></select><select id="hs-product"></select><select id="hs-brand"></select></div>
+        <div class="frow frow-4" id="hs-filters-doc"><select id="hs-type"></select><select id="hs-cust"></select><select id="hs-product"></select><select id="hs-brand"></select></div>
+        <div class="frow" id="hs-filters-movers" style="display:none"><select id="mvf-cat"></select></div>
         <div class="frow quickrange">
           <button type="button" class="qbtn2" data-days="7" onclick="quickDateRange(7,this)">7 days</button>
           <button type="button" class="qbtn2" data-days="30" onclick="quickDateRange(30,this)">30 days</button>
@@ -1610,7 +1612,7 @@ function kpis(){
   ['mbtn-staff','mbtn-logs'].forEach(function(id){
     var el=document.getElementById(id); if(el)el.style.display=show?'':'none';
   });
-  drawSyncDot();
+  drawSyncStrip();
 }
 function setupFilters(p){
   fill(document.getElementById(p+'-cat'),uniq(PRODUCTS.map(function(x){return x.cat})),'All categories');
@@ -2098,51 +2100,45 @@ function renderSettings(){
   document.getElementById('se2-staffemail').value=SHEETS_STAFF_EMAIL;
   drawSyncStatus();
 }
-/* Small green/red dot on the header refresh button — the same status the
-   Settings screen spells out in words, but visible from every screen so
-   you don't have to go into Settings just to see whether sync is working. */
-function drawSyncDot(){
-  var d=document.getElementById('sync-dot');
-  drawSyncStrip();
-  if(!d)return;
-  if(!sheetsConfigured()){d.className='sync-dot';return;}
-  d.className='sync-dot show'+((lastSyncOk&&!SYNC_QUEUE.length)?' ok':' bad');
-}
-/* Big, hard-to-miss status strip under the header, visible on every screen
-   — the tiny dot on the refresh button stays too, but this is the "I must
-   know whether it's synced or not" answer: green only when the last sync
-   succeeded AND every local write has actually reached the Sheet; red with
-   a plain-English reason otherwise. Tapping it opens Settings (if nothing
-   is configured yet) or retries right now. */
+/* Small status pill built into the header, visible on every screen. When
+   everything is fine it's just a quiet green dot — no text, no extra
+   width, nothing to read. The moment there's something wrong it turns
+   into a short red pill with a couple of words (never a full sentence —
+   the header has no room for one) so you know at a glance. Tapping it
+   opens Settings (if nothing is configured yet) or retries right now. */
 function drawSyncStrip(){
   var el=document.getElementById('sync-strip');
   if(!el)return;
+  var tx=el.querySelector('.tx');
   var pending=SYNC_QUEUE.length;
+  function bad(msg){
+    el.className='hsync bad';
+    el.title=msg;
+    if(tx)tx.textContent=msg;
+  }
+  function ok(){
+    el.className='hsync ok';
+    el.title='Synced with Google Sheets';
+    if(tx)tx.textContent='';
+  }
   // navigator.onLine is only ever reliably FALSE — no wifi/cellular radio
   // at all (airplane mode, dead zone). When it's false, say that plainly
   // instead of the more confusing "Sheets link/email" messages below,
   // since there's nothing to configure — it just needs a connection back.
   if(typeof navigator!=='undefined'&&navigator.onLine===false){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#128246;</span><span class="tx">No internet connection'+(pending?' — '+pending+' change'+(pending===1?'':'s')+' waiting':'')+'</span><span class="ar">&rsaquo;</span>';
+    bad('No connection');
   } else if(!sheetsConfigured()){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not connected to Google Sheets — tap to set up</span><span class="ar">&rsaquo;</span>';
+    bad('Not set up');
   } else if(!SHEETS_STAFF_EMAIL){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Add your email in Settings so your changes save</span><span class="ar">&rsaquo;</span>';
+    bad('Add email');
   } else if(pending>0){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">'+pending+' change'+(pending===1?'':'s')+' not saved to Sheets yet — tap to retry</span><span class="ar">&rsaquo;</span>';
+    bad(pending+' not synced');
   } else if(lastSyncErr){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not synced: '+lastSyncErr+' — tap to retry</span><span class="ar">&rsaquo;</span>';
+    bad('Not synced');
   } else if(lastSyncOk){
-    el.className='syncstrip ok';
-    el.innerHTML='<span class="ic">&#10003;</span><span class="tx">Synced with Google Sheets</span><span class="ar">&rsaquo;</span>';
+    ok();
   } else {
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not synced yet — tap to sync now</span><span class="ar">&rsaquo;</span>';
+    bad('Not synced');
   }
 }
 function tapSyncStrip(){
@@ -2157,7 +2153,7 @@ function tapSyncStrip(){
   });
 }
 function drawSyncStatus(){
-  drawSyncDot();
+  drawSyncStrip();
   var el=document.getElementById('se2-syncstatus');
   if(!el)return;
   if(!sheetsConfigured()){
@@ -2940,6 +2936,10 @@ function renderHist(){
     fill(document.getElementById('hs-brand'),uniq(PRODUCTS.map(function(p){return p.brand})),'All brands');
     refreshHistoryProducts();
   }
+  var catSel=document.getElementById('mvf-cat');
+  if(catSel&&!catSel.options.length){
+    fill(catSel,uniq(PRODUCTS.map(function(p){return p.cat})),'All categories');
+  }
   refreshParties();
   drawHist();
 }
@@ -3046,45 +3046,105 @@ function drawGrouped(rows,view){
     '</div>';
   }).join('');
 }
-/* "Compare products" — ranks products by how many boxes actually left the
-   warehouse (customer stock-outs + internal transfers; receiving and stock
-   count adjustments don't count as "went out") within whatever date range
-   and other filters are set above. Brand and flavor are both right there
-   in the product name/metadata, so putting two products next to each
-   other in this ranked list is the comparison — no separate brand/flavor
-   toggle needed. */
+/* "Compare products" — pick a category, then see how it broke down during
+   the chosen period: a "By brand" rollup (every product/flavor of a brand
+   summed together, ranked highest to lowest) and, below it, a "By
+   product" list — every individual product/flavor ranked, either across
+   the whole category or, once a brand is tapped in the rollup above,
+   narrowed to just that brand's products. Only boxes that actually left
+   the warehouse count (customer stock-outs + internal transfers —
+   receiving and stock-count adjustments don't count as "went out"). */
+var moversBrand='';
+/* Safely embeds a string as a single-quoted JS string literal inside an
+   onclick="..." HTML attribute (which itself uses double quotes) — plain
+   JSON.stringify would use double quotes and break the attribute. */
+function jsAttrStr(s){return "'"+String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+"'";}
 function drawMovers(rows){
-  var g={};
+  var catSel=document.getElementById('mvf-cat');
+  var cat=catSel?catSel.value:'';
+  var lines=[];
   rows.forEach(function(h){
     if(h.type!=='invoice'&&h.type!=='transfer')return;
     h.lines.forEach(function(l){
       var p=prod(l.sku);
-      var o=g[l.sku]||(g[l.sku]={sku:l.sku,name:l.name,brand:(p&&p.brand)||'',cat:(p&&p.cat)||'',outB:0,moves:{},last:h.date});
-      o.outB+=l.boxes;
-      o.moves[h.id]=1;
-      if(h.date>o.last)o.last=h.date;
+      var pcat=(p&&p.cat)||l.cat||'';
+      var pbrand=(p&&p.brand)||l.brand||'';
+      if(cat&&pcat!==cat)return;
+      lines.push({sku:l.sku,name:l.name,brand:pbrand,cat:pcat,boxes:l.boxes,hid:h.id,date:h.date});
     });
   });
-  var a=[];for(var k in g)a.push(g[k]);
-  a.sort(function(x,y){return y.outB-x.outB;});
-  document.getElementById('hs-count').textContent=a.length+' product'+(a.length===1?'':'s')+' moved out in this period';
-  if(!a.length){document.getElementById('hs-list').innerHTML='<div class="empty">No stock went out to customers or other locations in this period</div>';return;}
-  var max=Math.max.apply(null,a.map(function(x){return x.outB;}))||1;
-  document.getElementById('hs-list').innerHTML=a.slice(0,80).map(function(o){
+  // If whatever's drilled into (brand) no longer has any boxes in this
+  // filtered set (category/date changed underneath it), fall back to "all
+  // brands" instead of silently showing an empty product list.
+  if(moversBrand&&!lines.some(function(l){return l.brand===moversBrand;}))moversBrand='';
+  var countEl=document.getElementById('hs-count');
+  if(countEl)countEl.textContent=(cat||'All categories')+' &middot; '+lines.length+' line'+(lines.length===1?'':'s')+' moved out in this period';
+  if(!lines.length){
+    document.getElementById('hs-list').innerHTML='<div class="empty">No stock went out'+(cat?' in '+cat:'')+' during this period</div>';
+    return;
+  }
+  // ---- By brand: every product/flavor of a brand summed together ----
+  var gB={};
+  lines.forEach(function(l){
+    if(!l.brand)return;
+    var o=gB[l.brand]||(gB[l.brand]={name:l.brand,outB:0,moves:{},skus:{}});
+    o.outB+=l.boxes; o.moves[l.hid]=1; o.skus[l.sku]=1;
+  });
+  var aB=[];for(var kb in gB)aB.push(gB[kb]);
+  aB.sort(function(x,y){return y.outB-x.outB;});
+  var maxB=Math.max.apply(null,aB.map(function(x){return x.outB;}))||1;
+  // ---- By product: the selected brand's products, or every product in
+  // the category (across all brands) when no brand is picked ----
+  var poolLines=moversBrand?lines.filter(function(l){return l.brand===moversBrand;}):lines;
+  var gP={};
+  poolLines.forEach(function(l){
+    var o=gP[l.sku]||(gP[l.sku]={sku:l.sku,name:l.name,brand:l.brand,cat:l.cat,outB:0,moves:{},last:l.date});
+    o.outB+=l.boxes; o.moves[l.hid]=1; if(l.date>o.last)o.last=l.date;
+  });
+  var aP=[];for(var kp in gP)aP.push(gP[kp]);
+  aP.sort(function(x,y){return y.outB-x.outB;});
+  var maxP=Math.max.apply(null,aP.map(function(x){return x.outB;}))||1;
+
+  var html='<div class="sechead">By brand'+(cat?' &middot; '+cat:'')+'</div>';
+  html+=aB.length?aB.map(function(o){
+    var nSkus=Object.keys(o.skus).length,nMoves=Object.keys(o.moves).length,on=o.name===moversBrand;
+    return '<div class="hitem mv-brand'+(on?' on':'')+'" style="border-left-color:#0F5C5C" onclick="pickMoversBrand('+jsAttrStr(o.name)+')"><div class="h-top" style="align-items:center;gap:9px">'+
+      '<span class="h-id" style="flex:1">'+o.name+(on?' &#10003;':'')+'</span>'+
+      '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nSkus+' item'+(nSkus===1?'':'s')+'</span></div>'+
+      '<div class="h-meta">'+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; '+nMoves+' move'+(nMoves===1?'':'s')+'</div>'+
+      '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/maxB)+'%"></i></div>'+
+    '</div>';
+  }).join(''):'<div class="empty">No branded products moved'+(cat?' in '+cat:'')+'</div>';
+
+  html+='<div class="sechead">By product'+(moversBrand?' &middot; '+moversBrand:(cat?' &middot; '+cat:''))+
+    (moversBrand?'<span class="mv-clear" onclick="pickMoversBrand('+jsAttrStr(moversBrand)+')">Show all brands &times;</span>':'')+'</div>';
+  html+=aP.length?aP.map(function(o){
     var nMoves=Object.keys(o.moves).length;
     return '<div class="hitem" style="border-left-color:#0F5C5C"><div class="h-top" style="align-items:center;gap:9px">'+
       icoCat(o.cat,'sm')+'<span class="h-id" style="flex:1">'+o.name+'</span>'+
       '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nMoves+' MOVE'+(nMoves===1?'':'S')+'</span></div>'+
       '<div class="h-meta">'+(o.brand?o.brand+' &middot; ':'')+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; last '+nice(o.last)+'</div>'+
-      '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/max)+'%"></i></div>'+
+      '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/maxP)+'%"></i></div>'+
     '</div>';
-  }).join('');
+  }).join(''):'<div class="empty">No products moved'+(moversBrand?' for '+moversBrand:'')+'</div>';
+
+  document.getElementById('hs-list').innerHTML=html;
 }
-['hs-q','hs-type','hs-cust','hs-from','hs-to','hs-product','hs-brand'].forEach(function(id){
+/* Tapping a brand in the "By brand" rollup narrows "By product" below to
+   just that brand's items — tapping the same brand again (or the "Show
+   all brands" chip) clears the drill-down. */
+function pickMoversBrand(brand){
+  moversBrand=(moversBrand===brand)?'':brand;
+  drawHist();
+}
+['hs-q','hs-type','hs-cust','hs-from','hs-to','hs-product','hs-brand','mvf-cat'].forEach(function(id){
   var e=document.getElementById(id);
   var fn=function(){
     if(id==='hs-type')refreshParties();
     if(id==='hs-brand')refreshHistoryProducts();
+    // Switching category starts the brand drill-down over — the brand
+    // picked under the old category may not even exist in the new one.
+    if(id==='mvf-cat')moversBrand='';
     // Editing a date by hand no longer matches a "7 days"/"30 days" preset
     // exactly, so drop the highlight instead of leaving a stale one on.
     if(id==='hs-from'||id==='hs-to'){
@@ -3116,6 +3176,9 @@ function setHistView(view,btn){
   document.getElementById('hs-view').value=view;
   var vs=document.querySelectorAll('.vbtn');
   for(var i=0;i<vs.length;i++)vs[i].classList.toggle('on',vs[i]===btn);
+  var docF=document.getElementById('hs-filters-doc'),movF=document.getElementById('hs-filters-movers');
+  if(docF)docF.style.display=view==='movers'?'none':'';
+  if(movF)movF.style.display=view==='movers'?'':'none';
   drawHist();
 }
 

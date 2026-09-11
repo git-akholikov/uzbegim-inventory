@@ -536,7 +536,7 @@ function kpis(){
   ['mbtn-staff','mbtn-logs'].forEach(function(id){
     var el=document.getElementById(id); if(el)el.style.display=show?'':'none';
   });
-  drawSyncDot();
+  drawSyncStrip();
 }
 function setupFilters(p){
   fill(document.getElementById(p+'-cat'),uniq(PRODUCTS.map(function(x){return x.cat})),'All categories');
@@ -1024,51 +1024,45 @@ function renderSettings(){
   document.getElementById('se2-staffemail').value=SHEETS_STAFF_EMAIL;
   drawSyncStatus();
 }
-/* Small green/red dot on the header refresh button — the same status the
-   Settings screen spells out in words, but visible from every screen so
-   you don't have to go into Settings just to see whether sync is working. */
-function drawSyncDot(){
-  var d=document.getElementById('sync-dot');
-  drawSyncStrip();
-  if(!d)return;
-  if(!sheetsConfigured()){d.className='sync-dot';return;}
-  d.className='sync-dot show'+((lastSyncOk&&!SYNC_QUEUE.length)?' ok':' bad');
-}
-/* Big, hard-to-miss status strip under the header, visible on every screen
-   — the tiny dot on the refresh button stays too, but this is the "I must
-   know whether it's synced or not" answer: green only when the last sync
-   succeeded AND every local write has actually reached the Sheet; red with
-   a plain-English reason otherwise. Tapping it opens Settings (if nothing
-   is configured yet) or retries right now. */
+/* Small status pill built into the header, visible on every screen. When
+   everything is fine it's just a quiet green dot — no text, no extra
+   width, nothing to read. The moment there's something wrong it turns
+   into a short red pill with a couple of words (never a full sentence —
+   the header has no room for one) so you know at a glance. Tapping it
+   opens Settings (if nothing is configured yet) or retries right now. */
 function drawSyncStrip(){
   var el=document.getElementById('sync-strip');
   if(!el)return;
+  var tx=el.querySelector('.tx');
   var pending=SYNC_QUEUE.length;
+  function bad(msg){
+    el.className='hsync bad';
+    el.title=msg;
+    if(tx)tx.textContent=msg;
+  }
+  function ok(){
+    el.className='hsync ok';
+    el.title='Synced with Google Sheets';
+    if(tx)tx.textContent='';
+  }
   // navigator.onLine is only ever reliably FALSE — no wifi/cellular radio
   // at all (airplane mode, dead zone). When it's false, say that plainly
   // instead of the more confusing "Sheets link/email" messages below,
   // since there's nothing to configure — it just needs a connection back.
   if(typeof navigator!=='undefined'&&navigator.onLine===false){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#128246;</span><span class="tx">No internet connection'+(pending?' — '+pending+' change'+(pending===1?'':'s')+' waiting':'')+'</span><span class="ar">&rsaquo;</span>';
+    bad('No connection');
   } else if(!sheetsConfigured()){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not connected to Google Sheets — tap to set up</span><span class="ar">&rsaquo;</span>';
+    bad('Not set up');
   } else if(!SHEETS_STAFF_EMAIL){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Add your email in Settings so your changes save</span><span class="ar">&rsaquo;</span>';
+    bad('Add email');
   } else if(pending>0){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">'+pending+' change'+(pending===1?'':'s')+' not saved to Sheets yet — tap to retry</span><span class="ar">&rsaquo;</span>';
+    bad(pending+' not synced');
   } else if(lastSyncErr){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not synced: '+lastSyncErr+' — tap to retry</span><span class="ar">&rsaquo;</span>';
+    bad('Not synced');
   } else if(lastSyncOk){
-    el.className='syncstrip ok';
-    el.innerHTML='<span class="ic">&#10003;</span><span class="tx">Synced with Google Sheets</span><span class="ar">&rsaquo;</span>';
+    ok();
   } else {
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not synced yet — tap to sync now</span><span class="ar">&rsaquo;</span>';
+    bad('Not synced');
   }
 }
 function tapSyncStrip(){
@@ -1083,7 +1077,7 @@ function tapSyncStrip(){
   });
 }
 function drawSyncStatus(){
-  drawSyncDot();
+  drawSyncStrip();
   var el=document.getElementById('se2-syncstatus');
   if(!el)return;
   if(!sheetsConfigured()){
@@ -1866,6 +1860,10 @@ function renderHist(){
     fill(document.getElementById('hs-brand'),uniq(PRODUCTS.map(function(p){return p.brand})),'All brands');
     refreshHistoryProducts();
   }
+  var catSel=document.getElementById('mvf-cat');
+  if(catSel&&!catSel.options.length){
+    fill(catSel,uniq(PRODUCTS.map(function(p){return p.cat})),'All categories');
+  }
   refreshParties();
   drawHist();
 }
@@ -1972,45 +1970,105 @@ function drawGrouped(rows,view){
     '</div>';
   }).join('');
 }
-/* "Compare products" — ranks products by how many boxes actually left the
-   warehouse (customer stock-outs + internal transfers; receiving and stock
-   count adjustments don't count as "went out") within whatever date range
-   and other filters are set above. Brand and flavor are both right there
-   in the product name/metadata, so putting two products next to each
-   other in this ranked list is the comparison — no separate brand/flavor
-   toggle needed. */
+/* "Compare products" — pick a category, then see how it broke down during
+   the chosen period: a "By brand" rollup (every product/flavor of a brand
+   summed together, ranked highest to lowest) and, below it, a "By
+   product" list — every individual product/flavor ranked, either across
+   the whole category or, once a brand is tapped in the rollup above,
+   narrowed to just that brand's products. Only boxes that actually left
+   the warehouse count (customer stock-outs + internal transfers —
+   receiving and stock-count adjustments don't count as "went out"). */
+var moversBrand='';
+/* Safely embeds a string as a single-quoted JS string literal inside an
+   onclick="..." HTML attribute (which itself uses double quotes) — plain
+   JSON.stringify would use double quotes and break the attribute. */
+function jsAttrStr(s){return "'"+String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+"'";}
 function drawMovers(rows){
-  var g={};
+  var catSel=document.getElementById('mvf-cat');
+  var cat=catSel?catSel.value:'';
+  var lines=[];
   rows.forEach(function(h){
     if(h.type!=='invoice'&&h.type!=='transfer')return;
     h.lines.forEach(function(l){
       var p=prod(l.sku);
-      var o=g[l.sku]||(g[l.sku]={sku:l.sku,name:l.name,brand:(p&&p.brand)||'',cat:(p&&p.cat)||'',outB:0,moves:{},last:h.date});
-      o.outB+=l.boxes;
-      o.moves[h.id]=1;
-      if(h.date>o.last)o.last=h.date;
+      var pcat=(p&&p.cat)||l.cat||'';
+      var pbrand=(p&&p.brand)||l.brand||'';
+      if(cat&&pcat!==cat)return;
+      lines.push({sku:l.sku,name:l.name,brand:pbrand,cat:pcat,boxes:l.boxes,hid:h.id,date:h.date});
     });
   });
-  var a=[];for(var k in g)a.push(g[k]);
-  a.sort(function(x,y){return y.outB-x.outB;});
-  document.getElementById('hs-count').textContent=a.length+' product'+(a.length===1?'':'s')+' moved out in this period';
-  if(!a.length){document.getElementById('hs-list').innerHTML='<div class="empty">No stock went out to customers or other locations in this period</div>';return;}
-  var max=Math.max.apply(null,a.map(function(x){return x.outB;}))||1;
-  document.getElementById('hs-list').innerHTML=a.slice(0,80).map(function(o){
+  // If whatever's drilled into (brand) no longer has any boxes in this
+  // filtered set (category/date changed underneath it), fall back to "all
+  // brands" instead of silently showing an empty product list.
+  if(moversBrand&&!lines.some(function(l){return l.brand===moversBrand;}))moversBrand='';
+  var countEl=document.getElementById('hs-count');
+  if(countEl)countEl.textContent=(cat||'All categories')+' &middot; '+lines.length+' line'+(lines.length===1?'':'s')+' moved out in this period';
+  if(!lines.length){
+    document.getElementById('hs-list').innerHTML='<div class="empty">No stock went out'+(cat?' in '+cat:'')+' during this period</div>';
+    return;
+  }
+  // ---- By brand: every product/flavor of a brand summed together ----
+  var gB={};
+  lines.forEach(function(l){
+    if(!l.brand)return;
+    var o=gB[l.brand]||(gB[l.brand]={name:l.brand,outB:0,moves:{},skus:{}});
+    o.outB+=l.boxes; o.moves[l.hid]=1; o.skus[l.sku]=1;
+  });
+  var aB=[];for(var kb in gB)aB.push(gB[kb]);
+  aB.sort(function(x,y){return y.outB-x.outB;});
+  var maxB=Math.max.apply(null,aB.map(function(x){return x.outB;}))||1;
+  // ---- By product: the selected brand's products, or every product in
+  // the category (across all brands) when no brand is picked ----
+  var poolLines=moversBrand?lines.filter(function(l){return l.brand===moversBrand;}):lines;
+  var gP={};
+  poolLines.forEach(function(l){
+    var o=gP[l.sku]||(gP[l.sku]={sku:l.sku,name:l.name,brand:l.brand,cat:l.cat,outB:0,moves:{},last:l.date});
+    o.outB+=l.boxes; o.moves[l.hid]=1; if(l.date>o.last)o.last=l.date;
+  });
+  var aP=[];for(var kp in gP)aP.push(gP[kp]);
+  aP.sort(function(x,y){return y.outB-x.outB;});
+  var maxP=Math.max.apply(null,aP.map(function(x){return x.outB;}))||1;
+
+  var html='<div class="sechead">By brand'+(cat?' &middot; '+cat:'')+'</div>';
+  html+=aB.length?aB.map(function(o){
+    var nSkus=Object.keys(o.skus).length,nMoves=Object.keys(o.moves).length,on=o.name===moversBrand;
+    return '<div class="hitem mv-brand'+(on?' on':'')+'" style="border-left-color:#0F5C5C" onclick="pickMoversBrand('+jsAttrStr(o.name)+')"><div class="h-top" style="align-items:center;gap:9px">'+
+      '<span class="h-id" style="flex:1">'+o.name+(on?' &#10003;':'')+'</span>'+
+      '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nSkus+' item'+(nSkus===1?'':'s')+'</span></div>'+
+      '<div class="h-meta">'+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; '+nMoves+' move'+(nMoves===1?'':'s')+'</div>'+
+      '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/maxB)+'%"></i></div>'+
+    '</div>';
+  }).join(''):'<div class="empty">No branded products moved'+(cat?' in '+cat:'')+'</div>';
+
+  html+='<div class="sechead">By product'+(moversBrand?' &middot; '+moversBrand:(cat?' &middot; '+cat:''))+
+    (moversBrand?'<span class="mv-clear" onclick="pickMoversBrand('+jsAttrStr(moversBrand)+')">Show all brands &times;</span>':'')+'</div>';
+  html+=aP.length?aP.map(function(o){
     var nMoves=Object.keys(o.moves).length;
     return '<div class="hitem" style="border-left-color:#0F5C5C"><div class="h-top" style="align-items:center;gap:9px">'+
       icoCat(o.cat,'sm')+'<span class="h-id" style="flex:1">'+o.name+'</span>'+
       '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nMoves+' MOVE'+(nMoves===1?'':'S')+'</span></div>'+
       '<div class="h-meta">'+(o.brand?o.brand+' &middot; ':'')+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; last '+nice(o.last)+'</div>'+
-      '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/max)+'%"></i></div>'+
+      '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/maxP)+'%"></i></div>'+
     '</div>';
-  }).join('');
+  }).join(''):'<div class="empty">No products moved'+(moversBrand?' for '+moversBrand:'')+'</div>';
+
+  document.getElementById('hs-list').innerHTML=html;
 }
-['hs-q','hs-type','hs-cust','hs-from','hs-to','hs-product','hs-brand'].forEach(function(id){
+/* Tapping a brand in the "By brand" rollup narrows "By product" below to
+   just that brand's items — tapping the same brand again (or the "Show
+   all brands" chip) clears the drill-down. */
+function pickMoversBrand(brand){
+  moversBrand=(moversBrand===brand)?'':brand;
+  drawHist();
+}
+['hs-q','hs-type','hs-cust','hs-from','hs-to','hs-product','hs-brand','mvf-cat'].forEach(function(id){
   var e=document.getElementById(id);
   var fn=function(){
     if(id==='hs-type')refreshParties();
     if(id==='hs-brand')refreshHistoryProducts();
+    // Switching category starts the brand drill-down over — the brand
+    // picked under the old category may not even exist in the new one.
+    if(id==='mvf-cat')moversBrand='';
     // Editing a date by hand no longer matches a "7 days"/"30 days" preset
     // exactly, so drop the highlight instead of leaving a stale one on.
     if(id==='hs-from'||id==='hs-to'){
@@ -2042,6 +2100,9 @@ function setHistView(view,btn){
   document.getElementById('hs-view').value=view;
   var vs=document.querySelectorAll('.vbtn');
   for(var i=0;i<vs.length;i++)vs[i].classList.toggle('on',vs[i]===btn);
+  var docF=document.getElementById('hs-filters-doc'),movF=document.getElementById('hs-filters-movers');
+  if(docF)docF.style.display=view==='movers'?'none':'';
+  if(movF)movF.style.display=view==='movers'?'':'none';
   drawHist();
 }
 
