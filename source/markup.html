@@ -128,7 +128,7 @@
         </button>
       </div>
 
-      <div class="menufoot">Uzbegim Food Market &middot; Inventory v1</div>
+      <div class="menufoot" id="menufoot">Uzbegim Food Market</div>
     </div>
 
     <div class="screen" id="s-stock">
@@ -226,14 +226,14 @@
           <div class="fg"><label class="lab">Category</label>
             <div class="searchrow"><select class="ctrl" id="np-cat"></select><button class="scanbtn" onclick="showInlineAdd('np-cat')">+ New</button></div>
             <div class="searchrow" id="np-cat-newrow" style="display:none;margin-top:6px">
-              <input class="ctrl" id="np-cat-newinput" placeholder="New category name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-cat','cat');}">
+              <input class="ctrl" id="np-cat-newinput" placeholder="New category name" autocapitalize="words" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-cat','cat');}">
               <button class="scanbtn" onclick="confirmInlineAdd('np-cat','cat')">Add</button>
               <button class="scanbtn" onclick="cancelInlineAdd('np-cat')">Cancel</button>
             </div></div>
           <div class="fg"><label class="lab">Brand</label>
             <div class="searchrow"><select class="ctrl" id="np-brand"></select><button class="scanbtn" onclick="showInlineAdd('np-brand')">+ New</button></div>
             <div class="searchrow" id="np-brand-newrow" style="display:none;margin-top:6px">
-              <input class="ctrl" id="np-brand-newinput" placeholder="New brand name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-brand','brand');}">
+              <input class="ctrl" id="np-brand-newinput" placeholder="New brand name" autocapitalize="words" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('np-brand','brand');}">
               <button class="scanbtn" onclick="confirmInlineAdd('np-brand','brand')">Add</button>
               <button class="scanbtn" onclick="cancelInlineAdd('np-brand')">Cancel</button>
             </div></div>
@@ -413,14 +413,14 @@
       <div class="fg"><label class="lab">Category <span class="req">required</span></label>
         <div class="searchrow"><select class="ctrl" id="pe-cat"></select><button class="scanbtn" onclick="showInlineAdd('pe-cat')">+ New</button></div>
         <div class="searchrow" id="pe-cat-newrow" style="display:none;margin-top:6px">
-          <input class="ctrl" id="pe-cat-newinput" placeholder="New category name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-cat','cat');}">
+          <input class="ctrl" id="pe-cat-newinput" placeholder="New category name" autocapitalize="words" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-cat','cat');}">
           <button class="scanbtn" onclick="confirmInlineAdd('pe-cat','cat')">Add</button>
           <button class="scanbtn" onclick="cancelInlineAdd('pe-cat')">Cancel</button>
         </div></div>
       <div class="fg"><label class="lab">Brand <span class="req">required</span></label>
         <div class="searchrow"><select class="ctrl" id="pe-brand"></select><button class="scanbtn" onclick="showInlineAdd('pe-brand')">+ New</button></div>
         <div class="searchrow" id="pe-brand-newrow" style="display:none;margin-top:6px">
-          <input class="ctrl" id="pe-brand-newinput" placeholder="New brand name" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-brand','brand');}">
+          <input class="ctrl" id="pe-brand-newinput" placeholder="New brand name" autocapitalize="words" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmInlineAdd('pe-brand','brand');}">
           <button class="scanbtn" onclick="confirmInlineAdd('pe-brand','brand')">Add</button>
           <button class="scanbtn" onclick="cancelInlineAdd('pe-brand')">Cancel</button>
         </div></div>
@@ -500,6 +500,9 @@
       <button class="btn" id="se2-syncnow" type="button">Sync now</button>
 
       <button class="btn" id="se2-save">Save settings</button>
+
+      <div class="sechead">About</div>
+      <div class="fg"><div class="stat-s" id="se2-version">&mdash;</div></div>
     </div>
 
     <div class="screen" id="s-detail"><div id="dt-body"></div></div>

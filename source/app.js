@@ -166,7 +166,8 @@ function applyServerMovements(list){
   order.forEach(function(num){
     if(HISTORY.some(function(h){return h.id===num;}))return; // already have it (usually the device that made it)
     var rows=groups[num].rows,first=rows[0];
-    var type=first.type==='Receiving'?'receipt':first.type==='Customer Stock-Out'?'invoice':'transfer';
+    var type=first.type==='Receiving'?'receipt':first.type==='Customer Stock-Out'?'invoice':
+      (first.type==='Stock Count Adjustment'?'adjustment':'transfer');
     var custName='Stock count';
     if(type==='receipt'){var s=findSupById(first.supplierId);custName=s?s.name:(first.supplierId||'');}
     else if(first.customerId){var c=findCust(first.customerId);custName=c?c.name:first.customerId;}
@@ -318,6 +319,14 @@ function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 document.addEventListener('visibilitychange',function(){
   if(!document.hidden&&sheetsConfigured())syncFromServer(function(ok){if(ok)refreshCurrentScreen();});
 });
+/* The phone's connection dropping/returning updates the sync strip right
+   away instead of waiting for the next poll, and reconnecting kicks off an
+   immediate sync + retry of anything that was waiting. */
+window.addEventListener('offline',function(){drawSyncStrip();});
+window.addEventListener('online',function(){
+  drawSyncStrip();
+  if(sheetsConfigured())queueRetryAll(function(){syncFromServer(function(ok){if(ok)refreshCurrentScreen();});});
+});
 
 /* Manual refresh button in the header (replaces the old, never-wired-up
    language switcher): syncs right now instead of waiting up to POLL_MS. */
@@ -462,7 +471,19 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
   go(d);
 });
 
+/* Bump these together every time a change ships, alongside sw.js's
+   CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
+   obvious at a glance whether a phone is on the latest build. */
+var APP_VERSION='10', APP_UPDATED='Sep 11, 2026';
+function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
+function drawAppVersion(){
+  var f=document.getElementById('menufoot');
+  if(f)f.innerHTML='Uzbegim Food Market &middot; '+appVersionLine();
+  var s=document.getElementById('se2-version');
+  if(s)s.innerHTML='App '+appVersionLine();
+}
 function kpis(){
+  drawAppVersion();
   var b=0,act=0,out=0,ord=0,low=0;
   for(var i=0;i<PRODUCTS.length;i++){
     b+=PRODUCTS[i].boxes;
@@ -660,9 +681,28 @@ function cancelInlineAdd(id){
 }
 function confirmInlineAdd(id,kind){
   var inp=document.getElementById(id+'-newinput');
-  var n=(inp&&inp.value||'').trim();
+  var n=(inp&&inp.value||'').trim().replace(/\s+/g,' ');
+  var label=kind==='cat'?'category':'brand';
   if(!n){if(inp)inp.focus();return;}
+  // A one- or two-letter name is almost always a typo or the phone's
+  // keyboard mangling what was typed, not a real category/brand — refuse
+  // it outright rather than letting it quietly pollute the list forever.
+  if(n.length<3){toast('Type at least 3 letters for a new '+label);if(inp)inp.focus();return;}
   var sel=document.getElementById(id);
+  var existing=Array.prototype.map.call(sel.options,function(o){return o.value||o.textContent;});
+  var dupIdx=-1;
+  for(var i=0;i<existing.length;i++)if(existing[i].toLowerCase()===n.toLowerCase()){dupIdx=i;break;}
+  if(dupIdx>-1){
+    // Already there (maybe different capitalization) — select the real one
+    // instead of creating a near-duplicate that looks almost the same.
+    sel.value=existing[dupIdx];
+    cancelInlineAdd(id);
+    if(id==='np-cat'||id==='np-brand')previewSku();
+    else if(id==='pe-cat'||id==='pe-brand')previewPeSku();
+    toast((kind==='cat'?'Category':'Brand')+' "'+existing[dupIdx]+'" already exists — selected it');
+    return;
+  }
+  if(!confirm('Create new '+label+' "'+n+'"?\n\nDouble-check the spelling — this is what will show on every product using it.'))return;
   sel.insertAdjacentHTML('afterbegin','<option>'+n+'</option>');
   sel.value=n;
   cancelInlineAdd(id);
@@ -1016,7 +1056,14 @@ function drawSyncStrip(){
   var el=document.getElementById('sync-strip');
   if(!el)return;
   var pending=SYNC_QUEUE.length;
-  if(!sheetsConfigured()){
+  // navigator.onLine is only ever reliably FALSE — no wifi/cellular radio
+  // at all (airplane mode, dead zone). When it's false, say that plainly
+  // instead of the more confusing "Sheets link/email" messages below,
+  // since there's nothing to configure — it just needs a connection back.
+  if(typeof navigator!=='undefined'&&navigator.onLine===false){
+    el.className='syncstrip bad';
+    el.innerHTML='<span class="ic">&#128246;</span><span class="tx">No internet connection'+(pending?' — '+pending+' change'+(pending===1?'':'s')+' waiting':'')+'</span><span class="ar">&rsaquo;</span>';
+  } else if(!sheetsConfigured()){
     el.className='syncstrip bad';
     el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not connected to Google Sheets — tap to set up</span><span class="ar">&rsaquo;</span>';
   } else if(!SHEETS_STAFF_EMAIL){
@@ -1199,7 +1246,7 @@ document.getElementById('cb-go').addEventListener('click',function(){
   if(!confirm('Post '+lines.length+' adjustment'+(lines.length===1?'':'s')+'?\n\nStock will be set to what you counted. This is recorded permanently.'))return;
   var num='ADJ-'+TODAY.replace(/-/g,'')+'-'+(Math.floor(Math.random()*900)+100);
   var d=new Date();
-  var rec={id:num,type:'transfer',cust:'Stock count',date:TODAY,
+  var rec={id:num,type:'adjustment',cust:'Stock count',date:TODAY,
     time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),
     who:(ME&&ME.name)?ME.name:'Abdu',ref:'',notes:'Physical count adjustment',lines:lines};
   HISTORY.unshift(rec); lastMovement=rec;
@@ -1768,7 +1815,7 @@ function buildPDF(m){
   doc.text(SETTINGS.line1+'  |  '+SETTINGS.line2,L,68);
   y=125;doc.setTextColor(30);
   doc.setFont('helvetica','bold');doc.setFontSize(15);
-  doc.text(m.type==='invoice'?'INVOICE':m.type==='receipt'?'GOODS RECEIPT':'TRANSFER NOTE',L,y);
+  doc.text(m.type==='invoice'?'INVOICE':m.type==='receipt'?'GOODS RECEIPT':m.type==='adjustment'?'ADJUSTMENT NOTE':'TRANSFER NOTE',L,y);
   doc.setFontSize(10);doc.setFont('helvetica','normal');
   doc.text('No.  '+m.id,L,y+18);
   doc.text('Date  '+nice(m.date)+'  '+(m.time||''),L,y+33);
@@ -1826,7 +1873,7 @@ function renderAttn(){
 }
 
 function renderHist(){
-  document.getElementById('hs-type').innerHTML='<option value="">All types</option><option value="invoice">Stock out</option><option value="transfer">Transfer</option><option value="receipt">Received</option>';
+  document.getElementById('hs-type').innerHTML='<option value="">All types</option><option value="invoice">Stock out</option><option value="transfer">Transfer</option><option value="adjustment">Adjustment</option><option value="receipt">Received</option>';
   if(!document.getElementById('hs-brand').options.length){
     fill(document.getElementById('hs-brand'),uniq(PRODUCTS.map(function(p){return p.brand})),'All brands');
     refreshHistoryProducts();
@@ -1870,6 +1917,14 @@ function histRows(){
     }
     return true;});
 }
+// Stock count adjustments used to be saved with the same internal type as
+// an internal transfer, so they showed up tagged TRANSFER in the
+// Inventory report — easy to mix up with stock actually moved to another
+// location. They're their own type now ('adjustment'); this is the one
+// place that maps every movement type to its display tag.
+function movementKind(type){
+  return type==='receipt'?'RECEIVED':type==='invoice'?'STOCK OUT':type==='adjustment'?'ADJUSTMENT':'TRANSFER';
+}
 function drawHist(){
   var r=histRows();
   var view=document.getElementById('hs-view').value;
@@ -1878,7 +1933,7 @@ function drawHist(){
   if(view!=='doc'){drawGrouped(r,view);return;}
   document.getElementById('hs-list').innerHTML=r.length?r.slice(0,60).map(function(h){
     var bx=0;for(var i=0;i<h.lines.length;i++)bx+=h.lines[i].boxes;
-    var kind=h.type==='receipt'?'RECEIVED':(h.type==='invoice'?'STOCK OUT':'TRANSFER');
+    var kind=movementKind(h.type);
     return '<div class="hitem hi-'+h.type+'" onclick="detail(\''+h.id+'\')"><div class="h-top"><span class="h-id">'+movementId(h.id)+'</span><span class="h-tag t-'+h.type+'">'+kind+'</span>'+(h._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div><div class="h-meta">'+h.cust+' &middot; '+nice(h.date)+' '+h.time+' &middot; '+h.who+'</div><div class="h-meta" style="margin-top:3px;color:#0F5C5C;font-weight:700">'+bx+' boxes &middot; '+h.lines.length+' products</div></div>';
   }).join(''):'<div class="empty">No movements match these filters</div>';
 }
