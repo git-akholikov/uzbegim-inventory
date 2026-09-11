@@ -32,11 +32,48 @@ var OWNER_EMAIL='abduraufkholikov@gmail.com';
    app link and a staff email are set in Settings, it also syncs real stock
    from a Google Sheet and posts every receiving / stock-out / transfer /
    stock-count movement there. See apps-script/DEPLOYMENT.md in the repo. */
-var SHEETS_API_URL=localStorage.getItem('uzb_api_url')||'';
+/* Baked into the app so sync keeps working even if the phone's browser
+   storage gets wiped (this happens — iOS clears a PWA's local storage after
+   about a week of not being opened, or a "Clear website data" tap). This is
+   the same Web app URL from Code.gs's Deployment ID; "New version" deploys
+   (see README) never change it, only "New deployment" would, so it's safe
+   to hardcode. Settings can still override it if that ever changes. */
+var DEFAULT_SHEETS_API_URL='https://script.google.com/macros/s/AKfycbxMC3uqlWXdp2IB5DNDsvj6pq79833GMR7i_m5Omtg3hRQ8ozDcfx3c2OozO1fW5942/exec';
+var SHEETS_API_URL=localStorage.getItem('uzb_api_url')||DEFAULT_SHEETS_API_URL;
 var SHEETS_STAFF_EMAIL=localStorage.getItem('uzb_staff_email')||'';
 var lastSyncOk=false,lastSyncErr='';
 
 function sheetsConfigured(){return !!SHEETS_API_URL;}
+
+/* ── Pending-write queue ──
+   Every write to Sheets (new/edited product, receiving, stock-out, transfer,
+   stock count) is applied to this device immediately, but the network call
+   to actually save it can fail (no signal, Sheets down, etc.). Instead of
+   the failure just flashing a toast and being forgotten — leaving stock
+   that "shows on this phone" but was never written to the Sheet — it goes
+   in this queue: the sync strip turns red and says how many changes are
+   waiting, the record itself is flagged _pending so lists can badge it,
+   and it's retried automatically every time a sync succeeds (poll, pull to
+   refresh, tapping the strip) until it goes through. */
+var SYNC_QUEUE=[];
+function queuePush(label,run,onSettle){
+  var id='q'+Date.now()+Math.random().toString(36).slice(2,7);
+  SYNC_QUEUE.push({id:id,label:label,run:run,onSettle:onSettle});
+  drawSyncStrip();
+  return id;
+}
+function queueDrop(id){SYNC_QUEUE=SYNC_QUEUE.filter(function(x){return x.id!==id;});drawSyncStrip();}
+function queueRetryAll(cb){
+  if(!SYNC_QUEUE.length){if(cb)cb();return;}
+  var items=SYNC_QUEUE.slice(),left=items.length;
+  items.forEach(function(it){
+    it.run(function(ok){
+      if(ok)queueDrop(it.id);
+      if(it.onSettle)it.onSettle(ok);
+      if(--left===0){drawSyncStrip();if(cb)cb();}
+    });
+  });
+}
 
 function applyServerProducts(list){
   if(!list)return;
@@ -160,8 +197,9 @@ function syncFromServer(cb){
     applyServerLogs(res.logs);
     lastSyncOk=true;lastSyncErr='';
     kpis();
+    queueRetryAll();
     if(cb)cb(true);
-  }).catch(function(err){lastSyncOk=false;lastSyncErr=String(err);if(cb)cb(false,lastSyncErr);});
+  }).catch(function(err){lastSyncOk=false;lastSyncErr=String(err);kpis();if(cb)cb(false,lastSyncErr);});
 }
 
 /* Change log — who added/edited what. Only shown in the manager app (see
@@ -174,7 +212,18 @@ function applyServerLogs(list){
   LOGS=list.slice().sort(function(a,b){return (b.ts||'')<(a.ts||'')?-1:((b.ts||'')>(a.ts||'')?1:0);});
 }
 
-function postMovements(type,lines,extra,cb){
+function doPostMovements(movements,cb){
+  fetch(SHEETS_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:'addMovements',staffEmail:SHEETS_STAFF_EMAIL,movements:movements})})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if(!res||res.ok===false){if(cb)cb(false,res&&res.error);return;}
+      applyServerProducts(res.products);
+      if(cb)cb(true,null,res);
+    })
+    .catch(function(err){if(cb)cb(false,String(err));});
+}
+function postMovements(type,lines,extra,cb,onSettle){
   extra=extra||{};
   if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
   if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
@@ -182,15 +231,14 @@ function postMovements(type,lines,extra,cb){
     return{type:type,productId:l.sku,qty:(type==='Stock Count Adjustment')?l.delta:l.boxes,
       customerId:extra.customerId||'',supplierId:extra.supplierId||'',notes:extra.notes||''};
   });
-  fetch(SHEETS_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify({action:'addMovements',staffEmail:SHEETS_STAFF_EMAIL,movements:movements})})
-    .then(function(r){return r.json();})
-    .then(function(res){
-      if(!res||res.ok===false){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,res&&res.error);return;}
-      applyServerProducts(res.products);
-      if(cb)cb(true);
-    })
-    .catch(function(err){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,String(err));});
+  var label=type+': '+lines.length+' item'+(lines.length===1?'':'s');
+  doPostMovements(movements,function(ok,err){
+    if(!ok){
+      toast('Sheets sync failed — will keep retrying');
+      queuePush(label,function(retryCb){doPostMovements(movements,function(ok2){if(retryCb)retryCb(ok2);});},onSettle);
+    }
+    if(cb)cb(ok,err);
+  });
 }
 
 /* Shared helper behind postAddProduct/postUpdateProduct/postAddCustomer/
@@ -198,28 +246,39 @@ function postMovements(type,lines,extra,cb){
    action, applies whatever list comes back (products/customers/suppliers),
    and warns (without blocking the local edit) if Sheets isn't configured or
    the request fails — same pattern as postMovements. */
-function postAction(action,key,payload,applyFn,cb){
-  if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
-  if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
+function doPostAction(action,key,payload,applyFn,cb){
   var body={action:action,staffEmail:SHEETS_STAFF_EMAIL};
   body[key]=payload;
   fetch(SHEETS_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)})
     .then(function(r){return r.json();})
     .then(function(res){
-      if(!res||res.ok===false){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,res&&res.error);return;}
+      if(!res||res.ok===false){if(cb)cb(false,res&&res.error);return;}
       if(applyFn)applyFn(res);
       if(cb)cb(true,null,res);
     })
-    .catch(function(err){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,String(err));});
+    .catch(function(err){if(cb)cb(false,String(err));});
 }
-function postAddProduct(p,cb){postAction('addProduct','product',p,function(res){applyServerProducts(res.products);},cb);}
-function postUpdateProduct(p,cb){postAction('updateProduct','product',p,function(res){applyServerProducts(res.products);},cb);}
-function postAddCustomer(c,cb){postAction('addCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb);}
-function postUpdateCustomer(c,cb){postAction('updateCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb);}
-function postAddSupplier(s,cb){postAction('addSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb);}
-function postUpdateSupplier(s,cb){postAction('updateSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb);}
-function postAddStaff(s,cb){postAction('addStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb);}
-function postUpdateStaff(s,cb){postAction('updateStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb);}
+function postAction(action,key,payload,applyFn,cb,label,onSettle){
+  if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
+  if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
+  doPostAction(action,key,payload,applyFn,function(ok,err,res){
+    if(!ok){
+      toast('Sheets sync failed — will keep retrying');
+      queuePush(label||action,function(retryCb){
+        doPostAction(action,key,payload,applyFn,function(ok2){if(retryCb)retryCb(ok2);});
+      },onSettle);
+    }
+    if(cb)cb(ok,err,res);
+  });
+}
+function postAddProduct(p,cb,onSettle){postAction('addProduct','product',p,function(res){applyServerProducts(res.products);},cb,'New product: '+(p.name||p.sku),onSettle);}
+function postUpdateProduct(p,cb,onSettle){postAction('updateProduct','product',p,function(res){applyServerProducts(res.products);},cb,'Product update: '+(p.name||p.sku),onSettle);}
+function postAddCustomer(c,cb,onSettle){postAction('addCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb,'New customer: '+c.name,onSettle);}
+function postUpdateCustomer(c,cb,onSettle){postAction('updateCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb,'Customer update: '+c.name,onSettle);}
+function postAddSupplier(s,cb,onSettle){postAction('addSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb,'New supplier: '+s.name,onSettle);}
+function postUpdateSupplier(s,cb,onSettle){postAction('updateSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb,'Supplier update: '+s.name,onSettle);}
+function postAddStaff(s,cb,onSettle){postAction('addStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb,'New staff: '+s.name,onSettle);}
+function postUpdateStaff(s,cb,onSettle){postAction('updateStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb,'Staff update: '+s.name,onSettle);}
 
 /* Near-live updates: Google Sheets has no push mechanism, so this polls
    for fresh stock every 20s while the tab is open and visible (paused when
@@ -266,10 +325,12 @@ function manualRefresh(){
   if(!sheetsConfigured()){toast('Add the Sheets link in Settings to sync');return;}
   var btn=document.getElementById('btn-refresh');
   if(btn)btn.classList.add('spinning');
-  syncFromServer(function(ok,err){
-    if(btn)btn.classList.remove('spinning');
-    if(ok){refreshCurrentScreen();toast('Synced with Google Sheets');}
-    else toast('Sync failed'+(err?(': '+err):''));
+  queueRetryAll(function(){
+    syncFromServer(function(ok,err){
+      if(btn)btn.classList.remove('spinning');
+      if(ok){refreshCurrentScreen();toast('Synced with Google Sheets');}
+      else toast('Sync failed'+(err?(': '+err):''));
+    });
   });
 }
 (function(){var b=document.getElementById('btn-refresh');if(b)b.addEventListener('click',manualRefresh);})();
@@ -553,7 +614,7 @@ function renderStock(){
   var r=filterProducts('stk');
   document.getElementById('stk-count').textContent=r.length+' of '+PRODUCTS.length+' products';
   document.getElementById('stk-list').innerHTML=r.length?r.map(function(p){var s=statusOf(p);
-    return '<div class="card'+(s==='OUT'?' dead':(s==='ORDER'?' hot':''))+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div><div class="c-meta">'+p.sku+' &middot; '+p.cat+' &middot; '+p.upb+' '+p.unit+'/box</div><div style="margin-top:6px"><span class="pill s-'+s+'">'+label(s)+'</span></div><div class="c-meta" style="margin-top:4px">'+dosLabel(p)+'</div></div><div class="c-box">'+p.boxes+'<small>BOXES</small></div></div>';
+    return '<div class="card'+(s==='OUT'?' dead':(s==='ORDER'?' hot':''))+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+(p._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div><div class="c-meta">'+p.sku+' &middot; '+p.cat+' &middot; '+p.upb+' '+p.unit+'/box</div><div style="margin-top:6px"><span class="pill s-'+s+'">'+label(s)+'</span></div><div class="c-meta" style="margin-top:4px">'+dosLabel(p)+'</div></div><div class="c-box">'+p.boxes+'<small>BOXES</small></div></div>';
   }).join(''):'<div class="empty">No products match these filters</div>';
 }
 ['stk-q','stk-cat','stk-brand','stk-status'].forEach(function(id){
@@ -650,9 +711,12 @@ document.getElementById('np-add').addEventListener('click',function(){
     if(PRODUCTS[i].name.toLowerCase()===full.toLowerCase()){toast(full+' already exists');return;}
 
   var sku=makeSku(cat,brand);
-  PRODUCTS.push({sku:sku,name:full,brand:brand,cat:cat,unit:unit,upb:upb,
-                 min:min,boxes:0,price:price,cost:cost,barcode:''});
-  postAddProduct({sku:sku,name:name,flavor:flavor,brand:brand,cat:cat,unit:unit,upb:upb,min:min});
+  var pRec={sku:sku,name:full,brand:brand,cat:cat,unit:unit,upb:upb,
+                 min:min,boxes:0,price:price,cost:cost,barcode:''};
+  PRODUCTS.push(pRec);
+  postAddProduct({sku:sku,name:name,flavor:flavor,brand:brand,cat:cat,unit:unit,upb:upb,min:min},
+    function(ok){pRec._pending=!ok;refreshCurrentScreen();},
+    function(ok){pRec._pending=!ok;refreshCurrentScreen();});
   if(boxes>0)rbasket[sku]={sku:sku,name:full,upb:upb,qty:boxes};
 
   ['np-name','np-flavor','np-upb','np-cost','np-price','np-min','np-boxes'].forEach(function(id){
@@ -707,7 +771,9 @@ document.getElementById('rv2-go').addEventListener('click',function(){
   HISTORY.unshift(rec); lastMovement=rec;
   a.forEach(function(it){ var p=prod(it.sku); if(p)p.boxes+=it.qty; });
   postMovements('Receiving',a.map(function(it){return{sku:it.sku,boxes:it.qty};}),
-    {supplierId:supplierIdByName(sup),notes:'Ref '+num+(ref?(' · PO '+ref):'')});
+    {supplierId:supplierIdByName(sup),notes:'Ref '+num+(ref?(' · PO '+ref):'')},
+    function(ok){rec._pending=!ok;refreshCurrentScreen();},
+    function(ok){rec._pending=!ok;refreshCurrentScreen();});
   document.getElementById('cf-id').textContent=num+'  |  '+sup;
   document.getElementById('cf-sum').textContent=bx+' boxes  |  '+un+' units received';
   document.getElementById('cf-acts').style.display='none';
@@ -765,7 +831,7 @@ function drawProducts(){
     if(!p.min)gaps.push('no minimum');
     if(!p.barcode)gaps.push('no barcode');
     return '<div class="card prod" data-i="'+x.i+'" style="cursor:pointer">'+
-      icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div>'+
+      icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+(p._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div>'+
       '<div class="c-meta">'+p.sku+' &middot; '+p.brand+' &middot; '+p.upb+' '+p.unit+'/box</div>'+
       '<div class="c-meta">minimum '+(p.min||'—')+' boxes &middot; '+p.boxes+' currently on hand</div>'+
       (gaps.length?'<div class="c-meta cx-miss">'+gaps.join(' &middot; ')+'</div>':'')+
@@ -841,11 +907,15 @@ document.getElementById('pe-save').addEventListener('click',function(){
   if(prodIdx>=0){
     rec.sku=PRODUCTS[prodIdx].sku; rec.boxes=PRODUCTS[prodIdx].boxes;
     PRODUCTS[prodIdx]=rec; toast(full+' saved');
-    postUpdateProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min});
+    postUpdateProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min},
+      function(ok){rec._pending=!ok;refreshCurrentScreen();},
+      function(ok){rec._pending=!ok;refreshCurrentScreen();});
   }else{
     rec.sku=makeSku(rec.cat,rec.brand); rec.boxes=0;
     PRODUCTS.push(rec); toast(full+' created as '+rec.sku);
-    postAddProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min,supplier:rec.supplier});
+    postAddProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min,supplier:rec.supplier},
+      function(ok){rec._pending=!ok;refreshCurrentScreen();},
+      function(ok){rec._pending=!ok;refreshCurrentScreen();});
   }
   ['stk','mv','pd','pr','aj'].forEach(function(pfx){
     var c=document.getElementById(pfx+'-cat'),b=document.getElementById(pfx+'-brand');
@@ -931,9 +1001,51 @@ function renderSettings(){
    you don't have to go into Settings just to see whether sync is working. */
 function drawSyncDot(){
   var d=document.getElementById('sync-dot');
+  drawSyncStrip();
   if(!d)return;
   if(!sheetsConfigured()){d.className='sync-dot';return;}
-  d.className='sync-dot show'+(lastSyncOk?' ok':(lastSyncErr?' bad':''));
+  d.className='sync-dot show'+((lastSyncOk&&!SYNC_QUEUE.length)?' ok':' bad');
+}
+/* Big, hard-to-miss status strip under the header, visible on every screen
+   — the tiny dot on the refresh button stays too, but this is the "I must
+   know whether it's synced or not" answer: green only when the last sync
+   succeeded AND every local write has actually reached the Sheet; red with
+   a plain-English reason otherwise. Tapping it opens Settings (if nothing
+   is configured yet) or retries right now. */
+function drawSyncStrip(){
+  var el=document.getElementById('sync-strip');
+  if(!el)return;
+  var pending=SYNC_QUEUE.length;
+  if(!sheetsConfigured()){
+    el.className='syncstrip bad';
+    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not connected to Google Sheets — tap to set up</span><span class="ar">&rsaquo;</span>';
+  } else if(!SHEETS_STAFF_EMAIL){
+    el.className='syncstrip bad';
+    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Add your email in Settings so your changes save</span><span class="ar">&rsaquo;</span>';
+  } else if(pending>0){
+    el.className='syncstrip bad';
+    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">'+pending+' change'+(pending===1?'':'s')+' not saved to Sheets yet — tap to retry</span><span class="ar">&rsaquo;</span>';
+  } else if(lastSyncErr){
+    el.className='syncstrip bad';
+    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not synced: '+lastSyncErr+' — tap to retry</span><span class="ar">&rsaquo;</span>';
+  } else if(lastSyncOk){
+    el.className='syncstrip ok';
+    el.innerHTML='<span class="ic">&#10003;</span><span class="tx">Synced with Google Sheets</span><span class="ar">&rsaquo;</span>';
+  } else {
+    el.className='syncstrip bad';
+    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not synced yet — tap to sync now</span><span class="ar">&rsaquo;</span>';
+  }
+}
+function tapSyncStrip(){
+  if(!sheetsConfigured()||!SHEETS_STAFF_EMAIL){go('settings');return;}
+  var btn=document.getElementById('btn-refresh'); if(btn)btn.classList.add('spinning');
+  queueRetryAll(function(){
+    syncFromServer(function(ok,err){
+      if(btn)btn.classList.remove('spinning');
+      refreshCurrentScreen();
+      toast(ok?'Synced with Google Sheets':('Sync failed'+(err?(': '+err):'')));
+    });
+  });
 }
 function drawSyncStatus(){
   drawSyncDot();
@@ -942,6 +1054,9 @@ function drawSyncStatus(){
   if(!sheetsConfigured()){
     el.textContent='Not synced yet — add the Sheets link above';
     el.className='fg syncstatus';
+  } else if(SYNC_QUEUE.length){
+    el.textContent=SYNC_QUEUE.length+' change'+(SYNC_QUEUE.length===1?'':'s')+' waiting to reach Sheets';
+    el.className='fg syncstatus bad';
   } else if(lastSyncOk){
     el.innerHTML='<span class="syncdot"></span> Synced with Google Sheets';
     el.className='fg syncstatus ok';
@@ -963,26 +1078,28 @@ document.getElementById('se2-save').addEventListener('click',function(){
   SETTINGS.ownerEmail=document.getElementById('se2-email').value.trim();
   SETTINGS.emailWhen=document.getElementById('se2-when').value;
   OWNER_EMAIL=SETTINGS.ownerEmail;
-  SHEETS_API_URL=document.getElementById('se2-api').value.trim();
+  // Blank field falls back to the built-in default rather than turning sync
+  // off — there's only ever been one Sheet for this team, so an empty box
+  // (e.g. right after browser storage got wiped) should never mean "stop
+  // syncing", just "use the address that's already built into the app".
+  SHEETS_API_URL=document.getElementById('se2-api').value.trim()||DEFAULT_SHEETS_API_URL;
   SHEETS_STAFF_EMAIL=document.getElementById('se2-staffemail').value.trim();
   try{localStorage.setItem('uzb_api_url',SHEETS_API_URL);localStorage.setItem('uzb_staff_email',SHEETS_STAFF_EMAIL);}catch(e){}
   ME.email=SHEETS_STAFF_EMAIL;
-  if(isManager()){
-    var pinVal=document.getElementById('se2-pin').value.trim();
-    if(pinVal)try{localStorage.setItem('uzb_mgr_pin',pinVal);}catch(e){}
-  }
   kpis(); toast('Settings saved');
   if(sheetsConfigured())syncFromServer(function(){drawSyncStatus();});
   startPolling();
   go('menu');
 });
 document.getElementById('se2-syncnow').addEventListener('click',function(){
-  SHEETS_API_URL=document.getElementById('se2-api').value.trim();
+  SHEETS_API_URL=document.getElementById('se2-api').value.trim()||DEFAULT_SHEETS_API_URL;
   if(!sheetsConfigured()){toast('Add the Sheets link first');return;}
   toast('Syncing…');
-  syncFromServer(function(ok,err){
-    drawSyncStatus();
-    toast(ok?'Synced with Google Sheets':('Sync failed: '+err));
+  queueRetryAll(function(){
+    syncFromServer(function(ok,err){
+      drawSyncStatus();
+      toast(ok?'Synced with Google Sheets':('Sync failed: '+err));
+    });
   });
 });
 
@@ -1087,7 +1204,9 @@ document.getElementById('cb-go').addEventListener('click',function(){
     who:(ME&&ME.name)?ME.name:'Abdu',ref:'',notes:'Physical count adjustment',lines:lines};
   HISTORY.unshift(rec); lastMovement=rec;
   lines.forEach(function(l){ prod(l.sku).boxes+=l.delta; });
-  postMovements('Stock Count Adjustment',lines,{notes:'Ref '+num});
+  postMovements('Stock Count Adjustment',lines,{notes:'Ref '+num},
+    function(ok){rec._pending=!ok;refreshCurrentScreen();},
+    function(ok){rec._pending=!ok;refreshCurrentScreen();});
   counts={};
   document.getElementById('cf-id').textContent=num+'  |  Stock count';
   document.getElementById('cf-sum').textContent=lines.length+' product'+(lines.length===1?'':'s')+' adjusted  |  '+bx+' boxes';
@@ -1624,7 +1743,9 @@ document.getElementById('rv-go').addEventListener('click',function(){
   HISTORY.unshift(rec);lastMovement=rec;
   for(var j=0;j<a.length;j++)prod(a[j].sku).boxes-=a[j].qty;
   postMovements(c.kind==='transfer'?'Internal Transfer':'Customer Stock-Out',lines,
-    {customerId:c.id||'',notes:'Ref '+num});
+    {customerId:c.id||'',notes:'Ref '+num},
+    function(ok){rec._pending=!ok;refreshCurrentScreen();},
+    function(ok){rec._pending=!ok;refreshCurrentScreen();});
   document.getElementById('cf-id').textContent=num+'  |  '+c.name;
   document.getElementById('cf-sum').textContent=bx+' boxes  |  '+un+' units moved out';
   document.getElementById('cf-acts').style.display='none';
@@ -1758,7 +1879,7 @@ function drawHist(){
   document.getElementById('hs-list').innerHTML=r.length?r.slice(0,60).map(function(h){
     var bx=0;for(var i=0;i<h.lines.length;i++)bx+=h.lines[i].boxes;
     var kind=h.type==='receipt'?'RECEIVED':(h.type==='invoice'?'STOCK OUT':'TRANSFER');
-    return '<div class="hitem hi-'+h.type+'" onclick="detail(\''+h.id+'\')"><div class="h-top"><span class="h-id">'+movementId(h.id)+'</span><span class="h-tag t-'+h.type+'">'+kind+'</span></div><div class="h-meta">'+h.cust+' &middot; '+nice(h.date)+' '+h.time+' &middot; '+h.who+'</div><div class="h-meta" style="margin-top:3px;color:#0F5C5C;font-weight:700">'+bx+' boxes &middot; '+h.lines.length+' products</div></div>';
+    return '<div class="hitem hi-'+h.type+'" onclick="detail(\''+h.id+'\')"><div class="h-top"><span class="h-id">'+movementId(h.id)+'</span><span class="h-tag t-'+h.type+'">'+kind+'</span>'+(h._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div><div class="h-meta">'+h.cust+' &middot; '+nice(h.date)+' '+h.time+' &middot; '+h.who+'</div><div class="h-meta" style="margin-top:3px;color:#0F5C5C;font-weight:700">'+bx+' boxes &middot; '+h.lines.length+' products</div></div>';
   }).join(''):'<div class="empty">No movements match these filters</div>';
 }
 function drawGrouped(rows,view){
