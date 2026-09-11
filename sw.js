@@ -3,7 +3,7 @@
    everything but the two CDN scripts inlined) so it still opens when the
    phone has no signal. Bump CACHE_NAME whenever you ship a change so old
    phones pick up the new file instead of a stale cached copy. */
-var CACHE_NAME = 'uzbegim-inv-v12';
+var CACHE_NAME = 'uzbegim-inv-v8';
 var SHELL = [
   './',
   './index.html',
@@ -15,9 +15,7 @@ var SHELL = [
   './manifest-manager.json',
   './icon-192-manager.png',
   './icon-512-manager.png',
-  './icon-maskable-512-manager.png',
-  './movement-confirm.gif',
-  './delivery-confirm.gif'
+  './icon-maskable-512-manager.png'
 ];
 
 self.addEventListener('install', function(e){

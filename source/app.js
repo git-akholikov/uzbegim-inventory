@@ -32,48 +32,11 @@ var OWNER_EMAIL='abduraufkholikov@gmail.com';
    app link and a staff email are set in Settings, it also syncs real stock
    from a Google Sheet and posts every receiving / stock-out / transfer /
    stock-count movement there. See apps-script/DEPLOYMENT.md in the repo. */
-/* Baked into the app so sync keeps working even if the phone's browser
-   storage gets wiped (this happens — iOS clears a PWA's local storage after
-   about a week of not being opened, or a "Clear website data" tap). This is
-   the same Web app URL from Code.gs's Deployment ID; "New version" deploys
-   (see README) never change it, only "New deployment" would, so it's safe
-   to hardcode. Settings can still override it if that ever changes. */
-var DEFAULT_SHEETS_API_URL='https://script.google.com/macros/s/AKfycbxMC3uqlWXdp2IB5DNDsvj6pq79833GMR7i_m5Omtg3hRQ8ozDcfx3c2OozO1fW5942/exec';
-var SHEETS_API_URL=localStorage.getItem('uzb_api_url')||DEFAULT_SHEETS_API_URL;
+var SHEETS_API_URL=localStorage.getItem('uzb_api_url')||'';
 var SHEETS_STAFF_EMAIL=localStorage.getItem('uzb_staff_email')||'';
 var lastSyncOk=false,lastSyncErr='';
 
 function sheetsConfigured(){return !!SHEETS_API_URL;}
-
-/* ── Pending-write queue ──
-   Every write to Sheets (new/edited product, receiving, stock-out, transfer,
-   stock count) is applied to this device immediately, but the network call
-   to actually save it can fail (no signal, Sheets down, etc.). Instead of
-   the failure just flashing a toast and being forgotten — leaving stock
-   that "shows on this phone" but was never written to the Sheet — it goes
-   in this queue: the sync strip turns red and says how many changes are
-   waiting, the record itself is flagged _pending so lists can badge it,
-   and it's retried automatically every time a sync succeeds (poll, pull to
-   refresh, tapping the strip) until it goes through. */
-var SYNC_QUEUE=[];
-function queuePush(label,run,onSettle){
-  var id='q'+Date.now()+Math.random().toString(36).slice(2,7);
-  SYNC_QUEUE.push({id:id,label:label,run:run,onSettle:onSettle});
-  drawSyncStrip();
-  return id;
-}
-function queueDrop(id){SYNC_QUEUE=SYNC_QUEUE.filter(function(x){return x.id!==id;});drawSyncStrip();}
-function queueRetryAll(cb){
-  if(!SYNC_QUEUE.length){if(cb)cb();return;}
-  var items=SYNC_QUEUE.slice(),left=items.length;
-  items.forEach(function(it){
-    it.run(function(ok){
-      if(ok)queueDrop(it.id);
-      if(it.onSettle)it.onSettle(ok);
-      if(--left===0){drawSyncStrip();if(cb)cb();}
-    });
-  });
-}
 
 function applyServerProducts(list){
   if(!list)return;
@@ -166,8 +129,7 @@ function applyServerMovements(list){
   order.forEach(function(num){
     if(HISTORY.some(function(h){return h.id===num;}))return; // already have it (usually the device that made it)
     var rows=groups[num].rows,first=rows[0];
-    var type=first.type==='Receiving'?'receipt':first.type==='Customer Stock-Out'?'invoice':
-      (first.type==='Stock Count Adjustment'?'adjustment':'transfer');
+    var type=first.type==='Receiving'?'receipt':first.type==='Customer Stock-Out'?'invoice':'transfer';
     var custName='Stock count';
     if(type==='receipt'){var s=findSupById(first.supplierId);custName=s?s.name:(first.supplierId||'');}
     else if(first.customerId){var c=findCust(first.customerId);custName=c?c.name:first.customerId;}
@@ -198,9 +160,8 @@ function syncFromServer(cb){
     applyServerLogs(res.logs);
     lastSyncOk=true;lastSyncErr='';
     kpis();
-    queueRetryAll();
     if(cb)cb(true);
-  }).catch(function(err){lastSyncOk=false;lastSyncErr=String(err);kpis();if(cb)cb(false,lastSyncErr);});
+  }).catch(function(err){lastSyncOk=false;lastSyncErr=String(err);if(cb)cb(false,lastSyncErr);});
 }
 
 /* Change log — who added/edited what. Only shown in the manager app (see
@@ -213,18 +174,7 @@ function applyServerLogs(list){
   LOGS=list.slice().sort(function(a,b){return (b.ts||'')<(a.ts||'')?-1:((b.ts||'')>(a.ts||'')?1:0);});
 }
 
-function doPostMovements(movements,cb){
-  fetch(SHEETS_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify({action:'addMovements',staffEmail:SHEETS_STAFF_EMAIL,movements:movements})})
-    .then(function(r){return r.json();})
-    .then(function(res){
-      if(!res||res.ok===false){if(cb)cb(false,res&&res.error);return;}
-      applyServerProducts(res.products);
-      if(cb)cb(true,null,res);
-    })
-    .catch(function(err){if(cb)cb(false,String(err));});
-}
-function postMovements(type,lines,extra,cb,onSettle){
+function postMovements(type,lines,extra,cb){
   extra=extra||{};
   if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
   if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
@@ -232,14 +182,15 @@ function postMovements(type,lines,extra,cb,onSettle){
     return{type:type,productId:l.sku,qty:(type==='Stock Count Adjustment')?l.delta:l.boxes,
       customerId:extra.customerId||'',supplierId:extra.supplierId||'',notes:extra.notes||''};
   });
-  var label=type+': '+lines.length+' item'+(lines.length===1?'':'s');
-  doPostMovements(movements,function(ok,err){
-    if(!ok){
-      toast('Sheets sync failed — will keep retrying');
-      queuePush(label,function(retryCb){doPostMovements(movements,function(ok2){if(retryCb)retryCb(ok2);});},onSettle);
-    }
-    if(cb)cb(ok,err);
-  });
+  fetch(SHEETS_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:'addMovements',staffEmail:SHEETS_STAFF_EMAIL,movements:movements})})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if(!res||res.ok===false){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,res&&res.error);return;}
+      applyServerProducts(res.products);
+      if(cb)cb(true);
+    })
+    .catch(function(err){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,String(err));});
 }
 
 /* Shared helper behind postAddProduct/postUpdateProduct/postAddCustomer/
@@ -247,39 +198,28 @@ function postMovements(type,lines,extra,cb,onSettle){
    action, applies whatever list comes back (products/customers/suppliers),
    and warns (without blocking the local edit) if Sheets isn't configured or
    the request fails — same pattern as postMovements. */
-function doPostAction(action,key,payload,applyFn,cb){
+function postAction(action,key,payload,applyFn,cb){
+  if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
+  if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
   var body={action:action,staffEmail:SHEETS_STAFF_EMAIL};
   body[key]=payload;
   fetch(SHEETS_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)})
     .then(function(r){return r.json();})
     .then(function(res){
-      if(!res||res.ok===false){if(cb)cb(false,res&&res.error);return;}
+      if(!res||res.ok===false){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,res&&res.error);return;}
       if(applyFn)applyFn(res);
       if(cb)cb(true,null,res);
     })
-    .catch(function(err){if(cb)cb(false,String(err));});
+    .catch(function(err){toast('Sheets sync failed — saved on this device only');if(cb)cb(false,String(err));});
 }
-function postAction(action,key,payload,applyFn,cb,label,onSettle){
-  if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
-  if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
-  doPostAction(action,key,payload,applyFn,function(ok,err,res){
-    if(!ok){
-      toast('Sheets sync failed — will keep retrying');
-      queuePush(label||action,function(retryCb){
-        doPostAction(action,key,payload,applyFn,function(ok2){if(retryCb)retryCb(ok2);});
-      },onSettle);
-    }
-    if(cb)cb(ok,err,res);
-  });
-}
-function postAddProduct(p,cb,onSettle){postAction('addProduct','product',p,function(res){applyServerProducts(res.products);},cb,'New product: '+(p.name||p.sku),onSettle);}
-function postUpdateProduct(p,cb,onSettle){postAction('updateProduct','product',p,function(res){applyServerProducts(res.products);},cb,'Product update: '+(p.name||p.sku),onSettle);}
-function postAddCustomer(c,cb,onSettle){postAction('addCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb,'New customer: '+c.name,onSettle);}
-function postUpdateCustomer(c,cb,onSettle){postAction('updateCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb,'Customer update: '+c.name,onSettle);}
-function postAddSupplier(s,cb,onSettle){postAction('addSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb,'New supplier: '+s.name,onSettle);}
-function postUpdateSupplier(s,cb,onSettle){postAction('updateSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb,'Supplier update: '+s.name,onSettle);}
-function postAddStaff(s,cb,onSettle){postAction('addStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb,'New staff: '+s.name,onSettle);}
-function postUpdateStaff(s,cb,onSettle){postAction('updateStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb,'Staff update: '+s.name,onSettle);}
+function postAddProduct(p,cb){postAction('addProduct','product',p,function(res){applyServerProducts(res.products);},cb);}
+function postUpdateProduct(p,cb){postAction('updateProduct','product',p,function(res){applyServerProducts(res.products);},cb);}
+function postAddCustomer(c,cb){postAction('addCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb);}
+function postUpdateCustomer(c,cb){postAction('updateCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb);}
+function postAddSupplier(s,cb){postAction('addSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb);}
+function postUpdateSupplier(s,cb){postAction('updateSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb);}
+function postAddStaff(s,cb){postAction('addStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb);}
+function postUpdateStaff(s,cb){postAction('updateStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb);}
 
 /* Near-live updates: Google Sheets has no push mechanism, so this polls
    for fresh stock every 20s while the tab is open and visible (paused when
@@ -319,14 +259,6 @@ function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 document.addEventListener('visibilitychange',function(){
   if(!document.hidden&&sheetsConfigured())syncFromServer(function(ok){if(ok)refreshCurrentScreen();});
 });
-/* The phone's connection dropping/returning updates the sync strip right
-   away instead of waiting for the next poll, and reconnecting kicks off an
-   immediate sync + retry of anything that was waiting. */
-window.addEventListener('offline',function(){drawSyncStrip();});
-window.addEventListener('online',function(){
-  drawSyncStrip();
-  if(sheetsConfigured())queueRetryAll(function(){syncFromServer(function(ok){if(ok)refreshCurrentScreen();});});
-});
 
 /* Manual refresh button in the header (replaces the old, never-wired-up
    language switcher): syncs right now instead of waiting up to POLL_MS. */
@@ -334,12 +266,10 @@ function manualRefresh(){
   if(!sheetsConfigured()){toast('Add the Sheets link in Settings to sync');return;}
   var btn=document.getElementById('btn-refresh');
   if(btn)btn.classList.add('spinning');
-  queueRetryAll(function(){
-    syncFromServer(function(ok,err){
-      if(btn)btn.classList.remove('spinning');
-      if(ok){refreshCurrentScreen();toast('Synced with Google Sheets');}
-      else toast('Sync failed'+(err?(': '+err):''));
-    });
+  syncFromServer(function(ok,err){
+    if(btn)btn.classList.remove('spinning');
+    if(ok){refreshCurrentScreen();toast('Synced with Google Sheets');}
+    else toast('Sync failed'+(err?(': '+err):''));
   });
 }
 (function(){var b=document.getElementById('btn-refresh');if(b)b.addEventListener('click',manualRefresh);})();
@@ -536,7 +466,7 @@ function kpis(){
   ['mbtn-staff','mbtn-logs'].forEach(function(id){
     var el=document.getElementById(id); if(el)el.style.display=show?'':'none';
   });
-  drawSyncStrip();
+  drawSyncDot();
 }
 function setupFilters(p){
   fill(document.getElementById(p+'-cat'),uniq(PRODUCTS.map(function(x){return x.cat})),'All categories');
@@ -623,7 +553,7 @@ function renderStock(){
   var r=filterProducts('stk');
   document.getElementById('stk-count').textContent=r.length+' of '+PRODUCTS.length+' products';
   document.getElementById('stk-list').innerHTML=r.length?r.map(function(p){var s=statusOf(p);
-    return '<div class="card'+(s==='OUT'?' dead':(s==='ORDER'?' hot':''))+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+(p._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div><div class="c-meta">'+p.sku+' &middot; '+p.cat+' &middot; '+p.upb+' '+p.unit+'/box</div><div style="margin-top:6px"><span class="pill s-'+s+'">'+label(s)+'</span></div><div class="c-meta" style="margin-top:4px">'+dosLabel(p)+'</div></div><div class="c-box">'+p.boxes+'<small>BOXES</small></div></div>';
+    return '<div class="card'+(s==='OUT'?' dead':(s==='ORDER'?' hot':''))+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div><div class="c-meta">'+p.sku+' &middot; '+p.cat+' &middot; '+p.upb+' '+p.unit+'/box</div><div style="margin-top:6px"><span class="pill s-'+s+'">'+label(s)+'</span></div><div class="c-meta" style="margin-top:4px">'+dosLabel(p)+'</div></div><div class="c-box">'+p.boxes+'<small>BOXES</small></div></div>';
   }).join(''):'<div class="empty">No products match these filters</div>';
 }
 ['stk-q','stk-cat','stk-brand','stk-status'].forEach(function(id){
@@ -669,28 +599,9 @@ function cancelInlineAdd(id){
 }
 function confirmInlineAdd(id,kind){
   var inp=document.getElementById(id+'-newinput');
-  var n=(inp&&inp.value||'').trim().replace(/\s+/g,' ');
-  var label=kind==='cat'?'category':'brand';
+  var n=(inp&&inp.value||'').trim();
   if(!n){if(inp)inp.focus();return;}
-  // A one- or two-letter name is almost always a typo or the phone's
-  // keyboard mangling what was typed, not a real category/brand — refuse
-  // it outright rather than letting it quietly pollute the list forever.
-  if(n.length<3){toast('Type at least 3 letters for a new '+label);if(inp)inp.focus();return;}
   var sel=document.getElementById(id);
-  var existing=Array.prototype.map.call(sel.options,function(o){return o.value||o.textContent;});
-  var dupIdx=-1;
-  for(var i=0;i<existing.length;i++)if(existing[i].toLowerCase()===n.toLowerCase()){dupIdx=i;break;}
-  if(dupIdx>-1){
-    // Already there (maybe different capitalization) — select the real one
-    // instead of creating a near-duplicate that looks almost the same.
-    sel.value=existing[dupIdx];
-    cancelInlineAdd(id);
-    if(id==='np-cat'||id==='np-brand')previewSku();
-    else if(id==='pe-cat'||id==='pe-brand')previewPeSku();
-    toast((kind==='cat'?'Category':'Brand')+' "'+existing[dupIdx]+'" already exists — selected it');
-    return;
-  }
-  if(!confirm('Create new '+label+' "'+n+'"?\n\nDouble-check the spelling — this is what will show on every product using it.'))return;
   sel.insertAdjacentHTML('afterbegin','<option>'+n+'</option>');
   sel.value=n;
   cancelInlineAdd(id);
@@ -739,12 +650,9 @@ document.getElementById('np-add').addEventListener('click',function(){
     if(PRODUCTS[i].name.toLowerCase()===full.toLowerCase()){toast(full+' already exists');return;}
 
   var sku=makeSku(cat,brand);
-  var pRec={sku:sku,name:full,brand:brand,cat:cat,unit:unit,upb:upb,
-                 min:min,boxes:0,price:price,cost:cost,barcode:''};
-  PRODUCTS.push(pRec);
-  postAddProduct({sku:sku,name:name,flavor:flavor,brand:brand,cat:cat,unit:unit,upb:upb,min:min},
-    function(ok){pRec._pending=!ok;refreshCurrentScreen();},
-    function(ok){pRec._pending=!ok;refreshCurrentScreen();});
+  PRODUCTS.push({sku:sku,name:full,brand:brand,cat:cat,unit:unit,upb:upb,
+                 min:min,boxes:0,price:price,cost:cost,barcode:''});
+  postAddProduct({sku:sku,name:name,flavor:flavor,brand:brand,cat:cat,unit:unit,upb:upb,min:min});
   if(boxes>0)rbasket[sku]={sku:sku,name:full,upb:upb,qty:boxes};
 
   ['np-name','np-flavor','np-upb','np-cost','np-price','np-min','np-boxes'].forEach(function(id){
@@ -799,16 +707,14 @@ document.getElementById('rv2-go').addEventListener('click',function(){
   HISTORY.unshift(rec); lastMovement=rec;
   a.forEach(function(it){ var p=prod(it.sku); if(p)p.boxes+=it.qty; });
   postMovements('Receiving',a.map(function(it){return{sku:it.sku,boxes:it.qty};}),
-    {supplierId:supplierIdByName(sup),notes:'Ref '+num+(ref?(' · PO '+ref):'')},
-    function(ok){rec._pending=!ok;refreshCurrentScreen();},
-    function(ok){rec._pending=!ok;refreshCurrentScreen();});
+    {supplierId:supplierIdByName(sup),notes:'Ref '+num+(ref?(' · PO '+ref):'')});
   document.getElementById('cf-id').textContent=num+'  |  '+sup;
   document.getElementById('cf-sum').textContent=bx+' boxes  |  '+un+' units received';
   document.getElementById('cf-acts').style.display='none';
   document.getElementById('cf-mail').innerHTML='&#128190; Stock increased. Saved as <b>'+num+'</b> in History.';
   rbasket={}; RCOST={};
   document.getElementById('rc-ref').value=''; document.getElementById('rv2-notes').value='';
-  kpis(); showConfirm('delivery'); go('conf');
+  kpis(); go('conf');
 });
 
 
@@ -859,7 +765,7 @@ function drawProducts(){
     if(!p.min)gaps.push('no minimum');
     if(!p.barcode)gaps.push('no barcode');
     return '<div class="card prod" data-i="'+x.i+'" style="cursor:pointer">'+
-      icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+(p._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div>'+
+      icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div>'+
       '<div class="c-meta">'+p.sku+' &middot; '+p.brand+' &middot; '+p.upb+' '+p.unit+'/box</div>'+
       '<div class="c-meta">minimum '+(p.min||'—')+' boxes &middot; '+p.boxes+' currently on hand</div>'+
       (gaps.length?'<div class="c-meta cx-miss">'+gaps.join(' &middot; ')+'</div>':'')+
@@ -935,15 +841,11 @@ document.getElementById('pe-save').addEventListener('click',function(){
   if(prodIdx>=0){
     rec.sku=PRODUCTS[prodIdx].sku; rec.boxes=PRODUCTS[prodIdx].boxes;
     PRODUCTS[prodIdx]=rec; toast(full+' saved');
-    postUpdateProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min},
-      function(ok){rec._pending=!ok;refreshCurrentScreen();},
-      function(ok){rec._pending=!ok;refreshCurrentScreen();});
+    postUpdateProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min});
   }else{
     rec.sku=makeSku(rec.cat,rec.brand); rec.boxes=0;
     PRODUCTS.push(rec); toast(full+' created as '+rec.sku);
-    postAddProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min,supplier:rec.supplier},
-      function(ok){rec._pending=!ok;refreshCurrentScreen();},
-      function(ok){rec._pending=!ok;refreshCurrentScreen();});
+    postAddProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min,supplier:rec.supplier});
   }
   ['stk','mv','pd','pr','aj'].forEach(function(pfx){
     var c=document.getElementById(pfx+'-cat'),b=document.getElementById(pfx+'-brand');
@@ -1024,68 +926,22 @@ function renderSettings(){
   document.getElementById('se2-staffemail').value=SHEETS_STAFF_EMAIL;
   drawSyncStatus();
 }
-/* Small status pill built into the header, visible on every screen. When
-   everything is fine it's just a quiet green dot — no text, no extra
-   width, nothing to read. The moment there's something wrong it turns
-   into a short red pill with a couple of words (never a full sentence —
-   the header has no room for one) so you know at a glance. Tapping it
-   opens Settings (if nothing is configured yet) or retries right now. */
-function drawSyncStrip(){
-  var el=document.getElementById('sync-strip');
-  if(!el)return;
-  var tx=el.querySelector('.tx');
-  var pending=SYNC_QUEUE.length;
-  function bad(msg){
-    el.className='hsync bad';
-    el.title=msg;
-    if(tx)tx.textContent=msg;
-  }
-  function ok(){
-    el.className='hsync ok';
-    el.title='Synced with Google Sheets';
-    if(tx)tx.textContent='';
-  }
-  // navigator.onLine is only ever reliably FALSE — no wifi/cellular radio
-  // at all (airplane mode, dead zone). When it's false, say that plainly
-  // instead of the more confusing "Sheets link/email" messages below,
-  // since there's nothing to configure — it just needs a connection back.
-  if(typeof navigator!=='undefined'&&navigator.onLine===false){
-    bad('No connection');
-  } else if(!sheetsConfigured()){
-    bad('Not set up');
-  } else if(!SHEETS_STAFF_EMAIL){
-    bad('Add email');
-  } else if(pending>0){
-    bad(pending+' not synced');
-  } else if(lastSyncErr){
-    bad('Not synced');
-  } else if(lastSyncOk){
-    ok();
-  } else {
-    bad('Not synced');
-  }
-}
-function tapSyncStrip(){
-  if(!sheetsConfigured()||!SHEETS_STAFF_EMAIL){go('settings');return;}
-  var btn=document.getElementById('btn-refresh'); if(btn)btn.classList.add('spinning');
-  queueRetryAll(function(){
-    syncFromServer(function(ok,err){
-      if(btn)btn.classList.remove('spinning');
-      refreshCurrentScreen();
-      toast(ok?'Synced with Google Sheets':('Sync failed'+(err?(': '+err):'')));
-    });
-  });
+/* Small green/red dot on the header refresh button — the same status the
+   Settings screen spells out in words, but visible from every screen so
+   you don't have to go into Settings just to see whether sync is working. */
+function drawSyncDot(){
+  var d=document.getElementById('sync-dot');
+  if(!d)return;
+  if(!sheetsConfigured()){d.className='sync-dot';return;}
+  d.className='sync-dot show'+(lastSyncOk?' ok':(lastSyncErr?' bad':''));
 }
 function drawSyncStatus(){
-  drawSyncStrip();
+  drawSyncDot();
   var el=document.getElementById('se2-syncstatus');
   if(!el)return;
   if(!sheetsConfigured()){
     el.textContent='Not synced yet — add the Sheets link above';
     el.className='fg syncstatus';
-  } else if(SYNC_QUEUE.length){
-    el.textContent=SYNC_QUEUE.length+' change'+(SYNC_QUEUE.length===1?'':'s')+' waiting to reach Sheets';
-    el.className='fg syncstatus bad';
   } else if(lastSyncOk){
     el.innerHTML='<span class="syncdot"></span> Synced with Google Sheets';
     el.className='fg syncstatus ok';
@@ -1107,28 +963,26 @@ document.getElementById('se2-save').addEventListener('click',function(){
   SETTINGS.ownerEmail=document.getElementById('se2-email').value.trim();
   SETTINGS.emailWhen=document.getElementById('se2-when').value;
   OWNER_EMAIL=SETTINGS.ownerEmail;
-  // Blank field falls back to the built-in default rather than turning sync
-  // off — there's only ever been one Sheet for this team, so an empty box
-  // (e.g. right after browser storage got wiped) should never mean "stop
-  // syncing", just "use the address that's already built into the app".
-  SHEETS_API_URL=document.getElementById('se2-api').value.trim()||DEFAULT_SHEETS_API_URL;
+  SHEETS_API_URL=document.getElementById('se2-api').value.trim();
   SHEETS_STAFF_EMAIL=document.getElementById('se2-staffemail').value.trim();
   try{localStorage.setItem('uzb_api_url',SHEETS_API_URL);localStorage.setItem('uzb_staff_email',SHEETS_STAFF_EMAIL);}catch(e){}
   ME.email=SHEETS_STAFF_EMAIL;
+  if(isManager()){
+    var pinVal=document.getElementById('se2-pin').value.trim();
+    if(pinVal)try{localStorage.setItem('uzb_mgr_pin',pinVal);}catch(e){}
+  }
   kpis(); toast('Settings saved');
   if(sheetsConfigured())syncFromServer(function(){drawSyncStatus();});
   startPolling();
   go('menu');
 });
 document.getElementById('se2-syncnow').addEventListener('click',function(){
-  SHEETS_API_URL=document.getElementById('se2-api').value.trim()||DEFAULT_SHEETS_API_URL;
+  SHEETS_API_URL=document.getElementById('se2-api').value.trim();
   if(!sheetsConfigured()){toast('Add the Sheets link first');return;}
   toast('Syncing…');
-  queueRetryAll(function(){
-    syncFromServer(function(ok,err){
-      drawSyncStatus();
-      toast(ok?'Synced with Google Sheets':('Sync failed: '+err));
-    });
+  syncFromServer(function(ok,err){
+    drawSyncStatus();
+    toast(ok?'Synced with Google Sheets':('Sync failed: '+err));
   });
 });
 
@@ -1228,20 +1082,18 @@ document.getElementById('cb-go').addEventListener('click',function(){
   if(!confirm('Post '+lines.length+' adjustment'+(lines.length===1?'':'s')+'?\n\nStock will be set to what you counted. This is recorded permanently.'))return;
   var num='ADJ-'+TODAY.replace(/-/g,'')+'-'+(Math.floor(Math.random()*900)+100);
   var d=new Date();
-  var rec={id:num,type:'adjustment',cust:'Stock count',date:TODAY,
+  var rec={id:num,type:'transfer',cust:'Stock count',date:TODAY,
     time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),
     who:(ME&&ME.name)?ME.name:'Abdu',ref:'',notes:'Physical count adjustment',lines:lines};
   HISTORY.unshift(rec); lastMovement=rec;
   lines.forEach(function(l){ prod(l.sku).boxes+=l.delta; });
-  postMovements('Stock Count Adjustment',lines,{notes:'Ref '+num},
-    function(ok){rec._pending=!ok;refreshCurrentScreen();},
-    function(ok){rec._pending=!ok;refreshCurrentScreen();});
+  postMovements('Stock Count Adjustment',lines,{notes:'Ref '+num});
   counts={};
   document.getElementById('cf-id').textContent=num+'  |  Stock count';
   document.getElementById('cf-sum').textContent=lines.length+' product'+(lines.length===1?'':'s')+' adjusted  |  '+bx+' boxes';
   document.getElementById('cf-acts').style.display='none';
   document.getElementById('cf-mail').innerHTML='&#128190; Stock now matches your count. Saved as <b>'+num+'</b>.';
-  kpis(); showConfirm('adjustment'); go('conf');
+  kpis(); go('conf');
 });
 
 /* ══════════ PRICES (visible to everyone) ══════════ */
@@ -1772,32 +1624,13 @@ document.getElementById('rv-go').addEventListener('click',function(){
   HISTORY.unshift(rec);lastMovement=rec;
   for(var j=0;j<a.length;j++)prod(a[j].sku).boxes-=a[j].qty;
   postMovements(c.kind==='transfer'?'Internal Transfer':'Customer Stock-Out',lines,
-    {customerId:c.id||'',notes:'Ref '+num},
-    function(ok){rec._pending=!ok;refreshCurrentScreen();},
-    function(ok){rec._pending=!ok;refreshCurrentScreen();});
+    {customerId:c.id||'',notes:'Ref '+num});
   document.getElementById('cf-id').textContent=num+'  |  '+c.name;
   document.getElementById('cf-sum').textContent=bx+' boxes  |  '+un+' units moved out';
   document.getElementById('cf-acts').style.display='none';
   document.getElementById('cf-mail').innerHTML='&#128190; Stock decreased. Saved as <b>'+num+'</b> in Movement history.';
-  basket={};document.getElementById('rv-notes').value='';kpis();showConfirm('movement');go('conf');
+  basket={};document.getElementById('rv-notes').value='';kpis();go('conf');
 });
-/* Swaps the little checkmark badge on the shared confirmation screen for a
-   GIF — a truck driving off for stock that moved out to a customer or
-   another location, a warehouse receiving boxes for a delivery that just
-   came in — and sets the matching title. Stock-count adjustments aren't
-   either of those, so they keep the plain checkmark+confetti animation.
-   If a GIF file is missing (renamed, deleted), the img's onerror in
-   markup.html drops the 'gif' class and the checkmark shows instead, so
-   this never breaks the confirmation screen. */
-function showConfirm(kind){
-  var badge=document.getElementById('cf-badge'),img=document.getElementById('cf-gif'),title=document.getElementById('cf-title');
-  if(title)title.textContent=kind==='delivery'?'Delivery confirmed':kind==='movement'?'Movement confirmed':'Stock count saved';
-  if(badge)badge.classList.remove('gif');
-  if(img&&badge&&(kind==='delivery'||kind==='movement')){
-    img.src=kind==='delivery'?'delivery-confirm.gif':'movement-confirm.gif';
-    badge.classList.add('gif');
-  }
-}
 document.getElementById('cf-back').addEventListener('click',function(){go('menu')});
 document.getElementById('cf-open').addEventListener('click',function(){pdfAction(lastMovement,'open')});
 document.getElementById('cf-save').addEventListener('click',function(){pdfAction(lastMovement,'save')});
@@ -1814,7 +1647,7 @@ function buildPDF(m){
   doc.text(SETTINGS.line1+'  |  '+SETTINGS.line2,L,68);
   y=125;doc.setTextColor(30);
   doc.setFont('helvetica','bold');doc.setFontSize(15);
-  doc.text(m.type==='invoice'?'INVOICE':m.type==='receipt'?'GOODS RECEIPT':m.type==='adjustment'?'ADJUSTMENT NOTE':'TRANSFER NOTE',L,y);
+  doc.text(m.type==='invoice'?'INVOICE':m.type==='receipt'?'GOODS RECEIPT':'TRANSFER NOTE',L,y);
   doc.setFontSize(10);doc.setFont('helvetica','normal');
   doc.text('No.  '+m.id,L,y+18);
   doc.text('Date  '+nice(m.date)+'  '+(m.time||''),L,y+33);
@@ -1872,14 +1705,10 @@ function renderAttn(){
 }
 
 function renderHist(){
-  document.getElementById('hs-type').innerHTML='<option value="">All types</option><option value="invoice">Stock out</option><option value="transfer">Transfer</option><option value="adjustment">Adjustment</option><option value="receipt">Received</option>';
+  document.getElementById('hs-type').innerHTML='<option value="">All types</option><option value="invoice">Stock out</option><option value="transfer">Transfer</option><option value="receipt">Received</option>';
   if(!document.getElementById('hs-brand').options.length){
     fill(document.getElementById('hs-brand'),uniq(PRODUCTS.map(function(p){return p.brand})),'All brands');
     refreshHistoryProducts();
-  }
-  var catSel=document.getElementById('mvf-cat');
-  if(catSel&&!catSel.options.length){
-    fill(catSel,uniq(PRODUCTS.map(function(p){return p.cat})),'All categories');
   }
   refreshParties();
   drawHist();
@@ -1901,14 +1730,6 @@ function refreshParties(){
   var names=uniq(pool.map(function(h){return h.cust}));
   fill(sel,names,t?('All '+t+' parties'):'All parties');
   sel.value=(names.indexOf(was)>-1)?was:'';
-}
-// Stock count adjustments used to be saved with the same internal type as
-// an internal transfer, so they showed up tagged TRANSFER in the
-// Inventory report — easy to mix up with stock actually moved to another
-// location. They're their own type now ('adjustment'); this is the one
-// place that maps every movement type to its display tag.
-function movementKind(type){
-  return type==='receipt'?'RECEIVED':type==='invoice'?'STOCK OUT':type==='adjustment'?'ADJUSTMENT':'TRANSFER';
 }
 function histRows(){
   var q=document.getElementById('hs-q').value.toLowerCase().trim();
@@ -1933,12 +1754,11 @@ function drawHist(){
   var view=document.getElementById('hs-view').value;
   document.getElementById('hs-list').className='list '+(view==='doc'?'history-doc':'history-grouped');
   document.getElementById('hs-count').textContent=r.length+' of '+HISTORY.length+' movements';
-  if(view==='movers'){drawMovers(r);return;}
   if(view!=='doc'){drawGrouped(r,view);return;}
   document.getElementById('hs-list').innerHTML=r.length?r.slice(0,60).map(function(h){
     var bx=0;for(var i=0;i<h.lines.length;i++)bx+=h.lines[i].boxes;
-    var kind=movementKind(h.type);
-    return '<div class="hitem hi-'+h.type+'" onclick="detail(\''+h.id+'\')"><div class="h-top"><span class="h-id">'+movementId(h.id)+'</span><span class="h-tag t-'+h.type+'">'+kind+'</span>'+(h._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div><div class="h-meta">'+h.cust+' &middot; '+nice(h.date)+' '+h.time+' &middot; '+h.who+'</div><div class="h-meta" style="margin-top:3px;color:#0F5C5C;font-weight:700">'+bx+' boxes &middot; '+h.lines.length+' products</div></div>';
+    var kind=h.type==='receipt'?'RECEIVED':(h.type==='invoice'?'STOCK OUT':'TRANSFER');
+    return '<div class="hitem hi-'+h.type+'" onclick="detail(\''+h.id+'\')"><div class="h-top"><span class="h-id">'+movementId(h.id)+'</span><span class="h-tag t-'+h.type+'">'+kind+'</span></div><div class="h-meta">'+h.cust+' &middot; '+nice(h.date)+' '+h.time+' &middot; '+h.who+'</div><div class="h-meta" style="margin-top:3px;color:#0F5C5C;font-weight:700">'+bx+' boxes &middot; '+h.lines.length+' products</div></div>';
   }).join(''):'<div class="empty">No movements match these filters</div>';
 }
 function drawGrouped(rows,view){
@@ -1987,141 +1807,11 @@ function drawGrouped(rows,view){
     '</div>';
   }).join('');
 }
-/* "Compare products" — pick a category, then see how it broke down during
-   the chosen period: a "By brand" rollup (every product/flavor of a brand
-   summed together, ranked highest to lowest) and, below it, a "By
-   product" list — every individual product/flavor ranked, either across
-   the whole category or, once a brand is tapped in the rollup above,
-   narrowed to just that brand's products. Only boxes that actually left
-   the warehouse count (customer stock-outs + internal transfers —
-   receiving and stock-count adjustments don't count as "went out"). */
-var moversBrand='';
-/* Safely embeds a string as a single-quoted JS string literal inside an
-   onclick="..." HTML attribute (which itself uses double quotes) — plain
-   JSON.stringify would use double quotes and break the attribute. */
-function jsAttrStr(s){return "'"+String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+"'";}
-function drawMovers(rows){
-  var catSel=document.getElementById('mvf-cat');
-  var cat=catSel?catSel.value:'';
-  var lines=[];
-  rows.forEach(function(h){
-    if(h.type!=='invoice'&&h.type!=='transfer')return;
-    h.lines.forEach(function(l){
-      var p=prod(l.sku);
-      var pcat=(p&&p.cat)||l.cat||'';
-      var pbrand=(p&&p.brand)||l.brand||'';
-      if(cat&&pcat!==cat)return;
-      lines.push({sku:l.sku,name:l.name,brand:pbrand,cat:pcat,boxes:l.boxes,hid:h.id,date:h.date});
-    });
-  });
-  // If whatever's drilled into (brand) no longer has any boxes in this
-  // filtered set (category/date changed underneath it), fall back to "all
-  // brands" instead of silently showing an empty product list.
-  if(moversBrand&&!lines.some(function(l){return l.brand===moversBrand;}))moversBrand='';
-  var countEl=document.getElementById('hs-count');
-  if(countEl)countEl.textContent=(cat||'All categories')+' &middot; '+lines.length+' line'+(lines.length===1?'':'s')+' moved out in this period';
-  if(!lines.length){
-    document.getElementById('hs-list').innerHTML='<div class="empty">No stock went out'+(cat?' in '+cat:'')+' during this period</div>';
-    return;
-  }
-  // ---- By brand: every product/flavor of a brand summed together ----
-  var gB={};
-  lines.forEach(function(l){
-    if(!l.brand)return;
-    var o=gB[l.brand]||(gB[l.brand]={name:l.brand,outB:0,moves:{},skus:{}});
-    o.outB+=l.boxes; o.moves[l.hid]=1; o.skus[l.sku]=1;
-  });
-  var aB=[];for(var kb in gB)aB.push(gB[kb]);
-  aB.sort(function(x,y){return y.outB-x.outB;});
-  var maxB=Math.max.apply(null,aB.map(function(x){return x.outB;}))||1;
-  // ---- By product: the selected brand's products, or every product in
-  // the category (across all brands) when no brand is picked ----
-  var poolLines=moversBrand?lines.filter(function(l){return l.brand===moversBrand;}):lines;
-  var gP={};
-  poolLines.forEach(function(l){
-    var o=gP[l.sku]||(gP[l.sku]={sku:l.sku,name:l.name,brand:l.brand,cat:l.cat,outB:0,moves:{},last:l.date});
-    o.outB+=l.boxes; o.moves[l.hid]=1; if(l.date>o.last)o.last=l.date;
-  });
-  var aP=[];for(var kp in gP)aP.push(gP[kp]);
-  aP.sort(function(x,y){return y.outB-x.outB;});
-  var maxP=Math.max.apply(null,aP.map(function(x){return x.outB;}))||1;
-
-  var html='<div class="sechead">By brand'+(cat?' &middot; '+cat:'')+'</div>';
-  html+=aB.length?aB.map(function(o){
-    var nSkus=Object.keys(o.skus).length,nMoves=Object.keys(o.moves).length,on=o.name===moversBrand;
-    return '<div class="hitem mv-brand'+(on?' on':'')+'" style="border-left-color:#0F5C5C" onclick="pickMoversBrand('+jsAttrStr(o.name)+')"><div class="h-top" style="align-items:center;gap:9px">'+
-      '<span class="h-id" style="flex:1">'+o.name+(on?' &#10003;':'')+'</span>'+
-      '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nSkus+' item'+(nSkus===1?'':'s')+'</span></div>'+
-      '<div class="h-meta">'+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; '+nMoves+' move'+(nMoves===1?'':'s')+'</div>'+
-      '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/maxB)+'%"></i></div>'+
-    '</div>';
-  }).join(''):'<div class="empty">No branded products moved'+(cat?' in '+cat:'')+'</div>';
-
-  html+='<div class="sechead">By product'+(moversBrand?' &middot; '+moversBrand:(cat?' &middot; '+cat:''))+
-    (moversBrand?'<span class="mv-clear" onclick="pickMoversBrand('+jsAttrStr(moversBrand)+')">Show all brands &times;</span>':'')+'</div>';
-  html+=aP.length?aP.map(function(o){
-    var nMoves=Object.keys(o.moves).length;
-    return '<div class="hitem" style="border-left-color:#0F5C5C"><div class="h-top" style="align-items:center;gap:9px">'+
-      icoCat(o.cat,'sm')+'<span class="h-id" style="flex:1">'+o.name+'</span>'+
-      '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nMoves+' MOVE'+(nMoves===1?'':'S')+'</span></div>'+
-      '<div class="h-meta">'+(o.brand?o.brand+' &middot; ':'')+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; last '+nice(o.last)+'</div>'+
-      '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/maxP)+'%"></i></div>'+
-    '</div>';
-  }).join(''):'<div class="empty">No products moved'+(moversBrand?' for '+moversBrand:'')+'</div>';
-
-  document.getElementById('hs-list').innerHTML=html;
-}
-/* Tapping a brand in the "By brand" rollup narrows "By product" below to
-   just that brand's items — tapping the same brand again (or the "Show
-   all brands" chip) clears the drill-down. */
-function pickMoversBrand(brand){
-  moversBrand=(moversBrand===brand)?'':brand;
-  drawHist();
-}
-['hs-q','hs-type','hs-cust','hs-from','hs-to','hs-product','hs-brand','mvf-cat'].forEach(function(id){
+['hs-q','hs-type','hs-cust','hs-from','hs-to','hs-product','hs-brand'].forEach(function(id){
   var e=document.getElementById(id);
-  var fn=function(){
-    if(id==='hs-type')refreshParties();
-    if(id==='hs-brand')refreshHistoryProducts();
-    // Switching category starts the brand drill-down over — the brand
-    // picked under the old category may not even exist in the new one.
-    if(id==='mvf-cat')moversBrand='';
-    // Editing a date by hand no longer matches a "7 days"/"30 days" preset
-    // exactly, so drop the highlight instead of leaving a stale one on.
-    if(id==='hs-from'||id==='hs-to'){
-      var qs=document.querySelectorAll('.quickrange .qbtn2:not(.vbtn)');
-      for(var i=0;i<qs.length;i++)qs[i].classList.remove('on');
-    }
-    drawHist();
-  };
+  var fn=function(){ if(id==='hs-type')refreshParties();if(id==='hs-brand')refreshHistoryProducts();drawHist(); };
   e.addEventListener('input',fn); e.addEventListener('change',fn);
 });
-/* 7/30-day quick fill for the Inventory report's From/To fields — sets
-   both dates and redraws, so "Compare products" (or the plain movement
-   list) reflects that window immediately. */
-function quickDateRange(days,btn){
-  var to=new Date(),from=new Date(); from.setDate(from.getDate()-(days-1));
-  function iso(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
-  document.getElementById('hs-from').value=iso(from);
-  document.getElementById('hs-to').value=iso(to);
-  var qs=document.querySelectorAll('.quickrange .qbtn2:not(.vbtn)');
-  for(var i=0;i<qs.length;i++)qs[i].classList.remove('on');
-  if(btn)btn.classList.add('on');
-  drawHist();
-}
-/* Toggles the Inventory report between the plain movement list and the
-   "Compare products" view (boxes that actually left the warehouse, ranked
-   — see drawMovers below), keeping every other filter (dates, type,
-   party, product/brand search) applied exactly as set. */
-function setHistView(view,btn){
-  document.getElementById('hs-view').value=view;
-  var vs=document.querySelectorAll('.vbtn');
-  for(var i=0;i<vs.length;i++)vs[i].classList.toggle('on',vs[i]===btn);
-  var docF=document.getElementById('hs-filters-doc'),movF=document.getElementById('hs-filters-movers');
-  if(docF)docF.style.display=view==='movers'?'none':'';
-  if(movF)movF.style.display=view==='movers'?'':'none';
-  drawHist();
-}
 
 function detail(id){
   var h;for(var i=0;i<HISTORY.length;i++)if(HISTORY[i].id===id)h=HISTORY[i];
@@ -2300,14 +1990,6 @@ function applyPreset(v){
   document.getElementById('st-from').value=from;document.getElementById('st-to').value=to;
   renderStats();
 }
-/* "Compare products" on the Inventory report: pick a category, see the
-   chosen period broken down by brand (every flavor/variant of a brand
-   summed together, highest to lowest), then tap a brand to drill "By
-   product" down to its individual items. Only boxes that actually left
-   the warehouse count (customer stock-outs + internal transfers). */
-var statsCat='',statsBrand='';
-function onStatsCatChange(sel){statsCat=sel.value;statsBrand='';renderStats();}
-function pickStatsBrand(brand){statsBrand=(statsBrand===brand)?'':brand;renderStats();}
 function daysBetween(a,b){return Math.max(1,Math.round((new Date(b)-new Date(a))/86400000)+1);}
 function sparkline(byDay,f,t){
   var out=[],d=new Date(f),endD=new Date(t),n=0;
@@ -2400,66 +2082,8 @@ function renderStats(){
 
   H+='<div class="stat"><div class="stat-l">Daily movement</div>'+sparkline(byDay,f,t)+'<div class="stat-s">'+moveCount+' movements recorded in '+days+' days</div></div>';
   H+='<div class="sechead">Velocity by category</div><div class="stat">'+velocityRank(byCat,7)+'</div>';
-
-  // ---- Compare products: category -> by-brand rollup -> by-product drill-down ----
-  var cmpLines=[];
-  rows.forEach(function(h){
-    if(h.type!=='invoice'&&h.type!=='transfer')return;
-    h.lines.forEach(function(l){
-      var p=prod(l.sku);
-      var pcat=(p&&p.cat)||l.cat||'';
-      var pbrand=(p&&p.brand)||l.brand||'';
-      cmpLines.push({sku:l.sku,name:l.name,brand:pbrand,cat:pcat,boxes:l.boxes,hid:h.id,date:h.date});
-    });
-  });
-  var cmpCats=uniq(PRODUCTS.map(function(p){return p.cat;}));
-  if(statsCat&&cmpCats.indexOf(statsCat)===-1)statsCat='';
-  var cmpScoped=statsCat?cmpLines.filter(function(l){return l.cat===statsCat;}):cmpLines;
-  if(statsBrand&&!cmpScoped.some(function(l){return l.brand===statsBrand;}))statsBrand='';
-  var cmpB={};
-  cmpScoped.forEach(function(l){
-    if(!l.brand)return;
-    var o=cmpB[l.brand]||(cmpB[l.brand]={name:l.brand,outB:0,moves:{},skus:{}});
-    o.outB+=l.boxes;o.moves[l.hid]=1;o.skus[l.sku]=1;
-  });
-  var cmpAB=[];for(var kcb in cmpB)cmpAB.push(cmpB[kcb]);
-  cmpAB.sort(function(x,y){return y.outB-x.outB;});
-  var cmpMaxB=Math.max.apply(null,cmpAB.map(function(x){return x.outB;}))||1;
-  var cmpPoolLines=statsBrand?cmpScoped.filter(function(l){return l.brand===statsBrand;}):cmpScoped;
-  var cmpP={};
-  cmpPoolLines.forEach(function(l){
-    var o=cmpP[l.sku]||(cmpP[l.sku]={sku:l.sku,name:l.name,brand:l.brand,cat:l.cat,outB:0,moves:{},last:l.date});
-    o.outB+=l.boxes;o.moves[l.hid]=1;if(l.date>o.last)o.last=l.date;
-  });
-  var cmpAP=[];for(var kcp in cmpP)cmpAP.push(cmpP[kcp]);
-  cmpAP.sort(function(x,y){return y.outB-x.outB;});
-  var cmpMaxP=Math.max.apply(null,cmpAP.map(function(x){return x.outB;}))||1;
-
-  H+='<div class="sechead">Compare products</div>';
-  H+='<select class="inp" id="st-cat" onchange="onStatsCatChange(this)" style="margin-bottom:9px"><option value="">All categories</option>'+
-    cmpCats.map(function(c){return '<option value="'+c+'"'+(c===statsCat?' selected':'')+'>'+c+'</option>';}).join('')+'</select>';
-  H+='<div class="sechead">By brand'+(statsCat?' &middot; '+statsCat:'')+'</div><div class="stat">'+
-    (cmpAB.length?cmpAB.map(function(o){
-      var nSkus=Object.keys(o.skus).length,nMoves=Object.keys(o.moves).length,on=o.name===statsBrand;
-      return '<div class="hitem mv-brand'+(on?' on':'')+'" style="border-left-color:#0F5C5C" onclick="pickStatsBrand('+jsAttrStr(o.name)+')"><div class="h-top" style="align-items:center;gap:9px">'+
-        '<span class="h-id" style="flex:1">'+o.name+(on?' &#10003;':'')+'</span>'+
-        '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nSkus+' item'+(nSkus===1?'':'s')+'</span></div>'+
-        '<div class="h-meta">'+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; '+nMoves+' move'+(nMoves===1?'':'s')+'</div>'+
-        '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/cmpMaxB)+'%"></i></div>'+
-      '</div>';
-    }).join(''):'<div class="stat-s">No movement in this period'+(statsCat?' for '+statsCat:'')+'</div>')+'</div>';
-
-  H+='<div class="sechead">By product'+(statsBrand?' &middot; '+statsBrand:(statsCat?' &middot; '+statsCat:''))+
-    (statsBrand?'<span class="mv-clear" onclick="pickStatsBrand('+jsAttrStr(statsBrand)+')">Show all brands &times;</span>':'')+'</div><div class="stat">'+
-    (cmpAP.length?cmpAP.map(function(o){
-      var nMoves=Object.keys(o.moves).length;
-      return '<div class="hitem" style="border-left-color:#0F5C5C"><div class="h-top" style="align-items:center;gap:9px">'+
-        icoCat(o.cat,'sm')+'<span class="h-id" style="flex:1">'+o.name+'</span>'+
-        '<span class="h-tag" style="background:#e2efee;color:#0F5C5C">'+nMoves+' MOVE'+(nMoves===1?'':'S')+'</span></div>'+
-        '<div class="h-meta">'+(o.brand?o.brand+' &middot; ':'')+o.outB+' box'+(o.outB===1?'':'es')+' out &middot; last '+nice(o.last)+'</div>'+
-        '<div class="bar" style="margin-top:7px"><i style="width:'+Math.max(3,100*o.outB/cmpMaxP)+'%"></i></div>'+
-      '</div>';
-    }).join(''):'<div class="stat-s">No products moved'+(statsBrand?' for '+statsBrand:'')+'</div>')+'</div>';
+  H+='<div class="sechead">Velocity by brand</div><div class="stat">'+velocityRank(byBrand,7)+'</div>';
+  H+='<div class="sechead">Velocity by product</div><div class="stat">'+velocityRank(byProd,7)+'</div>';
 
   var insights=[];
   if(out)insights.push(['d-bad',out+' product'+(out===1?' is':'s are')+' out of stock.']);
