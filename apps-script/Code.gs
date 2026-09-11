@@ -272,6 +272,21 @@ function maxIdNumber(sh, prefix) {
 function appendMovements(ss, movements, staff) {
   var sh = ss.getSheetByName(TAB.movements);
   if (!sh) throw new Error('Movements tab not found');
+  // Idempotency: every line of one transaction (a receiving, stock-out,
+  // transfer, or count adjustment) carries the same "Ref <id>" marker in
+  // its Notes (see postMovements in app.js). The phone retries a write it
+  // never got a confirmed response for — usually because it truly never
+  // reached here, but occasionally because the response was lost on the
+  // way back after this already ran. In that second case, re-appending
+  // would double-count stock, so check for that marker first and treat a
+  // match as "already applied, nothing to do" instead of doing it again.
+  var refMatch = movements.length && /Ref\s+([A-Za-z0-9-]+)/.exec(movements[0].notes || '');
+  if (refMatch) {
+    var already = readTable(ss, TAB.movements).some(function (r) {
+      return String(r['Notes'] || '').indexOf('Ref ' + refMatch[1]) > -1;
+    });
+    if (already) return [];
+  }
   var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'America/New_York', 'yyyy-MM-dd');
   var next = maxIdNumber(sh, 'M') + 1;
   var ids = [];
@@ -303,6 +318,13 @@ function appendProduct(ss, p) {
   var sh = ss.getSheetByName(TAB.products);
   if (!sh) throw new Error('Products tab not found');
   if (!p || !p.sku) throw new Error('Missing product sku');
+  // Idempotency: a retried "add product" after a lost response would
+  // otherwise create a second row for the same SKU. If it's already here,
+  // this is that same product — nothing to add.
+  var values = sh.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (values[r][0] === p.sku) return p.sku;
+  }
   sh.appendRow([
     p.sku, p.name || '', p.brand || '', p.flavor || '', p.unit || '',
     p.cat || '', Number(p.upb) || 1, Number(p.min) || 0, p.supplier || '', 'Y', p.notes || ''
@@ -334,6 +356,12 @@ function appendCustomer(ss, c) {
   var sh = ss.getSheetByName(TAB.customers);
   if (!sh) throw new Error('Customers tab not found');
   if (!c || !c.name) throw new Error('Missing customer name');
+  // Idempotency: same reasoning as appendProduct — a retried add after a
+  // lost response shouldn't create a second row for the same name.
+  var values = sh.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][1]).toLowerCase() === c.name.toLowerCase()) return values[r][0];
+  }
   var id = 'C' + String(maxIdNumber(sh, 'C') + 1).padStart(2, '0');
   sh.appendRow([id, c.name, c.type || '', c.contact || '', c.phone || '', 'Y']);
   return id;
@@ -360,6 +388,12 @@ function appendSupplier(ss, s) {
   var sh = ss.getSheetByName(TAB.suppliers);
   if (!sh) throw new Error('Suppliers tab not found');
   if (!s || !s.name) throw new Error('Missing supplier name');
+  // Idempotency: same reasoning as appendProduct — a retried add after a
+  // lost response shouldn't create a second row for the same name.
+  var values = sh.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][1]).toLowerCase() === s.name.toLowerCase()) return values[r][0];
+  }
   var id = 'SUP' + String(maxIdNumber(sh, 'SUP') + 1).padStart(2, '0');
   sh.appendRow([id, s.name, s.contact || '', s.phone || '', 'Y']);
   return id;
@@ -385,6 +419,14 @@ function appendStaffRow(ss, s) {
   var sh = ss.getSheetByName(TAB.staff);
   if (!sh) throw new Error('Staff tab not found');
   if (!s || !s.name) throw new Error('Missing staff name');
+  // Idempotency: same reasoning as appendProduct — a retried add after a
+  // lost response shouldn't create a second row for the same person.
+  var already = readTable(ss, TAB.staff).some(function (r) {
+    var sameEmail = s.email && String(r['Email (Google Account)'] || '').toLowerCase() === s.email.toLowerCase();
+    var sameName = String(r['Name'] || '').toLowerCase() === s.name.toLowerCase();
+    return sameEmail || sameName;
+  });
+  if (already) return;
   // Written capitalized ("Manager"/"Worker") to match the existing Staff
   // tab's convention — reading it back always normalizes to lowercase via
   // isManagerRole(), so the exact casing here doesn't matter functionally,
