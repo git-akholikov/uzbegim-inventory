@@ -282,6 +282,25 @@ function fmtTimestamp(v) {
 
 /* ───────────────── writing ───────────────── */
 
+function lastRowWithValue(sh, col) {
+  // sh.getLastRow() / sh.appendRow() report the sheet's overall "used range",
+  // which Google Sheets can inflate far past where the real data ends --
+  // leftover formatting, a value that was typed into a cell far below and
+  // later cleared, or anything that once touched a cell keeps it counted as
+  // "used" even with nothing showing there anymore. That's what put new
+  // rows around row 500 instead of right after the real last row. Scanning
+  // the sheet's key column (Movement ID, Product ID, etc. -- always column
+  // 1 in every tab this app appends to) for its true last non-empty cell
+  // sidesteps that and always lands the next row exactly where it belongs.
+  var last = sh.getLastRow();
+  if (last < 1) return 0;
+  var vals = sh.getRange(1, col, last, 1).getValues();
+  for (var r = vals.length - 1; r >= 0; r--) {
+    if (vals[r][0] !== '' && vals[r][0] !== null) return r + 1;
+  }
+  return 0;
+}
+
 function maxIdNumber(sh, prefix) {
   var last = sh.getLastRow();
   var max = 0;
@@ -337,7 +356,7 @@ function appendMovements(ss, movements, staff) {
     ]);
   });
   if (rows.length) {
-    sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    sh.getRange(lastRowWithValue(sh, 1) + 1, 1, rows.length, rows[0].length).setValues(rows);
   }
   SpreadsheetApp.flush();
   return ids;
@@ -354,7 +373,7 @@ function appendProduct(ss, p) {
   for (var r = 1; r < values.length; r++) {
     if (values[r][0] === p.sku) return p.sku;
   }
-  sh.appendRow([
+  appendRowAt(sh, [
     p.sku, p.name || '', p.brand || '', p.flavor || '', p.unit || '',
     p.cat || '', Number(p.upb) || 1, Number(p.min) || 0, p.supplier || '', 'Y', p.notes || ''
   ]);
@@ -392,7 +411,7 @@ function appendCustomer(ss, c) {
     if (String(values[r][1]).toLowerCase() === c.name.toLowerCase()) return values[r][0];
   }
   var id = 'C' + String(maxIdNumber(sh, 'C') + 1).padStart(2, '0');
-  sh.appendRow([id, c.name, c.type || '', c.contact || '', c.phone || '', 'Y']);
+  appendRowAt(sh, [id, c.name, c.type || '', c.contact || '', c.phone || '', 'Y']);
   return id;
 }
 
@@ -424,7 +443,7 @@ function appendSupplier(ss, s) {
     if (String(values[r][1]).toLowerCase() === s.name.toLowerCase()) return values[r][0];
   }
   var id = 'SUP' + String(maxIdNumber(sh, 'SUP') + 1).padStart(2, '0');
-  sh.appendRow([id, s.name, s.contact || '', s.phone || '', 'Y']);
+  appendRowAt(sh, [id, s.name, s.contact || '', s.phone || '', 'Y']);
   return id;
 }
 
@@ -504,7 +523,17 @@ function appendRowByHeaders(sh, dataObj) {
   // tab's shape silently writing into the wrong column).
   var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
   var row = headers.map(function (h) { return dataObj.hasOwnProperty(h) ? dataObj[h] : ''; });
-  sh.appendRow(row);
+  appendRowAt(sh, row);
+}
+
+function appendRowAt(sh, row) {
+  // sh.appendRow(row) is just sh.getRange(sh.getLastRow()+1, ...) under the
+  // hood, so it inherits the same "used range can be inflated way past the
+  // real data" quirk -- see lastRowWithValue() above. Every tab this app
+  // writes to always has column 1 filled in on every real row (Movement ID,
+  // Product ID, Customer ID, Supplier ID, Staff ID, Timestamp), so that's a
+  // reliable column to find the true next empty row from.
+  sh.getRange(lastRowWithValue(sh, 1) + 1, 1, 1, row.length).setValues([row]);
 }
 
 function getOrCreateLogsSheet(ss) {
