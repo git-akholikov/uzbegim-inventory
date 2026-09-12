@@ -167,7 +167,7 @@ function applyServerMovements(list){
     if(HISTORY.some(function(h){return h.id===num;}))return; // already have it (usually the device that made it)
     var rows=groups[num].rows,first=rows[0];
     var type=first.type==='Receiving'?'receipt':first.type==='Customer Stock-Out'?'invoice':
-      (first.type==='Stock Count Adjustment'?'adjustment':'transfer');
+      (first.type==='Stock Count Adjustment'?'adjustment':(first.type==='Void'?'void':'transfer'));
     var custName='Stock count';
     if(type==='receipt'){var s=findSupById(first.supplierId);custName=s?s.name:(first.supplierId||'');}
     else if(first.customerId){var c=findCust(first.customerId);custName=c?c.name:first.customerId;}
@@ -175,7 +175,7 @@ function applyServerMovements(list){
     var lines=rows.map(function(r){
       var p=prod(r.productId);
       var line={sku:r.productId,name:p?p.name:r.productId,upb:p?p.upb:1,price:0,cost:0,boxes:r.qty};
-      if(first.type==='Stock Count Adjustment'){line.delta=r.signedQty;line.dir=r.signedQty>0?'found':'missing';line.boxes=Math.abs(r.signedQty);}
+      if(first.type==='Stock Count Adjustment'||first.type==='Void'){line.delta=r.signedQty;line.dir=r.signedQty>0?'found':'missing';line.boxes=Math.abs(r.signedQty);}
       return line;
     });
     var notes=(first.notes||'').replace(/^Ref\s+\S+\s*(?:·|\|)?\s*/,'').trim();
@@ -228,8 +228,12 @@ function postMovements(type,lines,extra,cb,onSettle){
   extra=extra||{};
   if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
   if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
+  // Stock Count Adjustment and Void both carry an already-signed delta per
+  // line (can be + or -) instead of a plain box count, since either one can
+  // add or remove stock depending on the line.
+  var signedType=(type==='Stock Count Adjustment'||type==='Void');
   var movements=lines.map(function(l){
-    return{type:type,productId:l.sku,qty:(type==='Stock Count Adjustment')?l.delta:l.boxes,
+    return{type:type,productId:l.sku,qty:signedType?l.delta:l.boxes,
       customerId:extra.customerId||'',supplierId:extra.supplierId||'',notes:extra.notes||''};
   });
   var label=type+': '+lines.length+' item'+(lines.length===1?'':'s');
@@ -474,7 +478,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='10', APP_UPDATED='Sep 11, 2026';
+var APP_VERSION='11', APP_UPDATED='Sep 12, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -1815,7 +1819,7 @@ function buildPDF(m){
   doc.text(SETTINGS.line1+'  |  '+SETTINGS.line2,L,68);
   y=125;doc.setTextColor(30);
   doc.setFont('helvetica','bold');doc.setFontSize(15);
-  doc.text(m.type==='invoice'?'INVOICE':m.type==='receipt'?'GOODS RECEIPT':m.type==='adjustment'?'ADJUSTMENT NOTE':'TRANSFER NOTE',L,y);
+  doc.text(m.type==='invoice'?'INVOICE':m.type==='receipt'?'GOODS RECEIPT':m.type==='adjustment'?'ADJUSTMENT NOTE':m.type==='void'?'VOID NOTE':'TRANSFER NOTE',L,y);
   doc.setFontSize(10);doc.setFont('helvetica','normal');
   doc.text('No.  '+m.id,L,y+18);
   doc.text('Date  '+nice(m.date)+'  '+(m.time||''),L,y+33);
@@ -1873,7 +1877,7 @@ function renderAttn(){
 }
 
 function renderHist(){
-  document.getElementById('hs-type').innerHTML='<option value="">All types</option><option value="invoice">Stock out</option><option value="transfer">Transfer</option><option value="adjustment">Adjustment</option><option value="receipt">Received</option>';
+  document.getElementById('hs-type').innerHTML='<option value="">All types</option><option value="invoice">Stock out</option><option value="transfer">Transfer</option><option value="adjustment">Adjustment</option><option value="receipt">Received</option><option value="void">Void</option>';
   if(!document.getElementById('hs-brand').options.length){
     fill(document.getElementById('hs-brand'),uniq(PRODUCTS.map(function(p){return p.brand})),'All brands');
     refreshHistoryProducts();
@@ -1923,7 +1927,68 @@ function histRows(){
 // location. They're their own type now ('adjustment'); this is the one
 // place that maps every movement type to its display tag.
 function movementKind(type){
-  return type==='receipt'?'RECEIVED':type==='invoice'?'STOCK OUT':type==='adjustment'?'ADJUSTMENT':'TRANSFER';
+  return type==='receipt'?'RECEIVED':type==='invoice'?'STOCK OUT':type==='adjustment'?'ADJUSTMENT':type==='void'?'VOID':'TRANSFER';
+}
+
+/* ---------------- Void a movement ----------------
+   Correcting a mistake after it's already saved (wrong quantity, wrong
+   product, wrong customer) used to mean a manual stock-count adjustment,
+   which fixes the number but leaves the original wrong entry looking like
+   it really happened. Voiding instead posts a brand-new movement that
+   exactly cancels the original one out, and links the two together --
+   nothing is ever deleted or edited in place, so the history (and the
+   Sheet) stays a true record of what actually happened, including the
+   mistake and its correction. Available same-day only, and only once per
+   movement, to keep it for genuine "I just made a mistake" corrections
+   rather than rewriting old history. */
+function movementSignedEffect(type,line){
+  if(type==='receipt')return line.boxes;
+  if(type==='adjustment'||type==='void')return(typeof line.delta==='number')?line.delta:line.boxes;
+  return -line.boxes; // invoice, transfer
+}
+function voidTarget(h){
+  if(!h||h.type!=='void')return null;
+  var m=/Void of (\S+)/.exec(h.notes||'');
+  return m?m[1]:null;
+}
+function voidedByEntry(id){
+  for(var i=0;i<HISTORY.length;i++)if(voidTarget(HISTORY[i])===id)return HISTORY[i];
+  return null;
+}
+function canVoid(h){
+  if(!h||h.type==='void')return false;
+  if(!h.lines||!h.lines.length)return false;
+  if(voidedByEntry(h.id))return false;
+  if(h.date!==TODAY)return false; // same-day window only
+  return true;
+}
+function confirmVoid(id){
+  var h=null;for(var i=0;i<HISTORY.length;i++)if(HISTORY[i].id===id){h=HISTORY[i];break;}
+  if(!canVoid(h)){toast('This movement can no longer be voided');return;}
+  var bx=0;for(var i=0;i<h.lines.length;i++)bx+=h.lines[i].boxes;
+  if(!confirm('Void '+movementId(h.id)+'?\n\n'+movementKind(h.type)+' of '+bx+' box'+(bx===1?'':'es')+' will be reversed with a new VOID entry. The original stays in History for the record -- nothing is deleted.'))return;
+  voidMovement(id);
+}
+function voidMovement(id){
+  var h=null;for(var i=0;i<HISTORY.length;i++)if(HISTORY[i].id===id){h=HISTORY[i];break;}
+  if(!canVoid(h))return;
+  var lines=h.lines.map(function(l){
+    var eff=movementSignedEffect(h.type,l);
+    return{sku:l.sku,name:l.name,upb:l.upb,price:0,cost:0,boxes:Math.abs(eff),delta:-eff,dir:(-eff>0?'found':'missing')};
+  });
+  var num='VOID-'+TODAY.replace(/-/g,'')+'-'+(Math.floor(Math.random()*900)+100);
+  var d=new Date();
+  var rec={id:num,type:'void',cust:h.cust,date:TODAY,
+    time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),
+    who:(ME&&ME.name)?ME.name:'Abdu',ref:'',notes:'Void of '+h.id,lines:lines};
+  HISTORY.unshift(rec); lastMovement=rec;
+  lines.forEach(function(l){var p=prod(l.sku); if(p)p.boxes+=l.delta;});
+  postMovements('Void',lines,{notes:'Ref '+num+' · Void of '+h.id},
+    function(ok){rec._pending=!ok;refreshCurrentScreen();},
+    function(ok){rec._pending=!ok;refreshCurrentScreen();});
+  toast('Voided '+movementId(h.id));
+  kpis();
+  detail(num);
 }
 function drawHist(){
   var r=histRows();
@@ -1934,7 +1999,7 @@ function drawHist(){
   document.getElementById('hs-list').innerHTML=r.length?r.slice(0,60).map(function(h){
     var bx=0;for(var i=0;i<h.lines.length;i++)bx+=h.lines[i].boxes;
     var kind=movementKind(h.type);
-    return '<div class="hitem hi-'+h.type+'" onclick="detail(\''+h.id+'\')"><div class="h-top"><span class="h-id">'+movementId(h.id)+'</span><span class="h-tag t-'+h.type+'">'+kind+'</span>'+(h._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div><div class="h-meta">'+h.cust+' &middot; '+nice(h.date)+' '+h.time+' &middot; '+h.who+'</div><div class="h-meta" style="margin-top:3px;color:#0F5C5C;font-weight:700">'+bx+' boxes &middot; '+h.lines.length+' products</div></div>';
+    return '<div class="hitem hi-'+h.type+'" onclick="detail(\''+h.id+'\')"><div class="h-top"><span class="h-id">'+movementId(h.id)+'</span><span class="h-tag t-'+h.type+'">'+kind+'</span>'+(h._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+(voidedByEntry(h.id)?' <span class="void-badge">VOIDED</span>':'')+'</div><div class="h-meta">'+h.cust+' &middot; '+nice(h.date)+' '+h.time+' &middot; '+h.who+'</div><div class="h-meta" style="margin-top:3px;color:#0F5C5C;font-weight:700">'+bx+' boxes &middot; '+h.lines.length+' products</div></div>';
   }).join(''):'<div class="empty">No movements match these filters</div>';
 }
 function drawGrouped(rows,view){
@@ -1993,12 +2058,18 @@ function detail(id){
   var h;for(var i=0;i<HISTORY.length;i++)if(HISTORY[i].id===id)h=HISTORY[i];
   var bx=0,un=0;
   for(var j=0;j<h.lines.length;j++){var L=h.lines[j];bx+=L.boxes;un+=L.boxes*L.upb;}
-  var kind=h.type==='receipt'?'RECEIVED':(h.type==='invoice'?'STOCK OUT':'TRANSFER');
+  var kind=movementKind(h.type);
+  var voidOfId=voidTarget(h);
+  var voidedBy=voidedByEntry(h.id);
+  var partyLabel=h.type==='receipt'?'Supplier':(h.type==='void'?'Voids':'Destination');
+  var partyValue=(voidOfId?('<a href="javascript:detail(\''+voidOfId+'\')">'+movementId(voidOfId)+'</a>'):h.cust);
+  var dirLabel=h.type==='receipt'?'IN':(h.type==='void'?'REVERSAL':(h.type==='adjustment'?'ADJUSTED':'OUT'));
   var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:15px;font-weight:800">'+movementId(h.id)+'</span><span class="h-tag t-'+h.type+'">'+kind+'</span></div>'+
-  '<div class="drow"><span>'+(h.type==='receipt'?'Supplier':'Destination')+'</span><span>'+h.cust+'</span></div>'+
+  (voidedBy?'<div class="void-note">This movement was voided by <a href="javascript:detail(\''+voidedBy.id+'\')">'+movementId(voidedBy.id)+'</a> on '+nice(voidedBy.date)+'.</div>':'')+
+  '<div class="drow"><span>'+partyLabel+'</span><span>'+partyValue+'</span></div>'+
   '<div class="drow"><span>Date</span><span>'+nice(h.date)+' '+h.time+'</span></div>'+
   '<div class="drow"><span>Entered by</span><span>'+h.who+'</span></div>'+
-  '<div class="drow"><span>Direction</span><span>'+(h.type==='receipt'?'IN':'OUT')+'</span></div>'+
+  '<div class="drow"><span>Direction</span><span>'+dirLabel+'</span></div>'+
   '<div class="drow"><span>Products</span><span>'+h.lines.length+'</span></div>'+
   (h.ref?'<div class="drow"><span>Reference</span><span>'+h.ref+'</span></div>':'')+
   (h.notes?'<div class="drow"><span>Notes</span><span>'+h.notes+'</span></div>':'')+
@@ -2008,6 +2079,7 @@ function detail(id){
     '<div class="c-meta">'+l.sku+' &middot; '+l.upb+' units/box &middot; '+(l.boxes*l.upb)+' units total</div>'+
     '</div><div class="c-box">'+l.boxes+'<small>BOXES</small></div></div>';}
   html+='<div class="total" style="margin-top:10px">'+bx+' boxes  |  '+un+' units</div>';
+  if(canVoid(h))html+='<button class="btn btn-danger" style="margin-top:14px" onclick="confirmVoid(\''+h.id+'\')">Void this movement</button>';
   document.getElementById('dt-body').innerHTML=html;go('detail');
 }
 

@@ -295,7 +295,10 @@ function appendMovements(ss, movements, staff) {
     if (!m.productId || !m.type) return;
     var qty = Number(m.qty) || 0;
     var signed;
-    if (m.type === 'Stock Count Adjustment') signed = qty;
+    // Stock Count Adjustment and Void both send an already-signed delta
+    // (can be + or -), since a void has to exactly cancel out whatever the
+    // original movement did, in either direction.
+    if (m.type === 'Stock Count Adjustment' || m.type === 'Void') signed = qty;
     else if (m.type === 'Receiving') signed = Math.abs(qty);
     else signed = -Math.abs(qty); // Customer Stock-Out, Internal Transfer
 
