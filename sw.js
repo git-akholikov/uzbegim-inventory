@@ -3,7 +3,7 @@
    everything but the two CDN scripts inlined) so it still opens when the
    phone has no signal. Bump CACHE_NAME whenever you ship a change so old
    phones pick up the new file instead of a stale cached copy. */
-var CACHE_NAME = 'uzbegim-inv-v11';
+var CACHE_NAME = 'uzbegim-inv-v12';
 var SHELL = [
   './',
   './index.html',

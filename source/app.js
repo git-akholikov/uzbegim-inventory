@@ -59,10 +59,10 @@ var SYNC_QUEUE=[];
 function queuePush(label,run,onSettle){
   var id='q'+Date.now()+Math.random().toString(36).slice(2,7);
   SYNC_QUEUE.push({id:id,label:label,run:run,onSettle:onSettle});
-  drawSyncStrip();
+  drawSyncDot();
   return id;
 }
-function queueDrop(id){SYNC_QUEUE=SYNC_QUEUE.filter(function(x){return x.id!==id;});drawSyncStrip();}
+function queueDrop(id){SYNC_QUEUE=SYNC_QUEUE.filter(function(x){return x.id!==id;});drawSyncDot();}
 function queueRetryAll(cb){
   if(!SYNC_QUEUE.length){if(cb)cb();return;}
   var items=SYNC_QUEUE.slice(),left=items.length;
@@ -70,7 +70,7 @@ function queueRetryAll(cb){
     it.run(function(ok){
       if(ok)queueDrop(it.id);
       if(it.onSettle)it.onSettle(ok);
-      if(--left===0){drawSyncStrip();if(cb)cb();}
+      if(--left===0){drawSyncDot();if(cb)cb();}
     });
   });
 }
@@ -226,8 +226,6 @@ function doPostMovements(movements,cb){
 }
 function postMovements(type,lines,extra,cb,onSettle){
   extra=extra||{};
-  if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
-  if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
   // Stock Count Adjustment and Void both carry an already-signed delta per
   // line (can be + or -) instead of a plain box count, since either one can
   // add or remove stock depending on the line.
@@ -237,10 +235,24 @@ function postMovements(type,lines,extra,cb,onSettle){
       customerId:extra.customerId||'',supplierId:extra.supplierId||'',notes:extra.notes||''};
   });
   var label=type+': '+lines.length+' item'+(lines.length===1?'':'s');
-  doPostMovements(movements,function(ok,err){
+  // attempt() is retried by the queue exactly as-is, so it re-checks
+  // sheetsConfigured()/SHEETS_STAFF_EMAIL fresh each time -- a movement made
+  // before Settings was finished (no link yet, or no staff email yet) used
+  // to just show a toast and be forgotten for good, with nothing left to
+  // retry once Settings was fixed. Now it always joins the same queue as a
+  // real network failure, so filling in Settings later is enough to get it
+  // to actually reach Sheets on the next sync.
+  function attempt(retryCb){
+    if(!sheetsConfigured()){if(retryCb)retryCb(false,'not configured');return;}
+    if(!SHEETS_STAFF_EMAIL){if(retryCb)retryCb(false,'no staff email');return;}
+    doPostMovements(movements,retryCb);
+  }
+  attempt(function(ok,err){
     if(!ok){
-      toast('Sheets sync failed — will keep retrying');
-      queuePush(label,function(retryCb){doPostMovements(movements,function(ok2){if(retryCb)retryCb(ok2);});},onSettle);
+      if(err==='not configured')toast('Not saved to Sheets — add the Sheets link in Settings','bad');
+      else if(err==='no staff email')toast('Not saved to Sheets yet — add your email in Settings','bad');
+      else toast('Sheets sync failed — will keep retrying','bad');
+      queuePush(label,attempt,onSettle);
     }
     if(cb)cb(ok,err);
   });
@@ -264,14 +276,20 @@ function doPostAction(action,key,payload,applyFn,cb){
     .catch(function(err){if(cb)cb(false,String(err));});
 }
 function postAction(action,key,payload,applyFn,cb,label,onSettle){
-  if(!sheetsConfigured()){toast('Not saved to Sheets — add the Sheets link in Settings');if(cb)cb(false);return;}
-  if(!SHEETS_STAFF_EMAIL){toast('Not saved to Sheets — add your email in Settings');if(cb)cb(false);return;}
-  doPostAction(action,key,payload,applyFn,function(ok,err,res){
+  // Same fix as postMovements(): always queue, whatever the reason for the
+  // first attempt failing, so an add/edit made before Settings was fully
+  // set up still reaches Sheets once it is.
+  function attempt(retryCb){
+    if(!sheetsConfigured()){if(retryCb)retryCb(false,'not configured');return;}
+    if(!SHEETS_STAFF_EMAIL){if(retryCb)retryCb(false,'no staff email');return;}
+    doPostAction(action,key,payload,applyFn,retryCb);
+  }
+  attempt(function(ok,err,res){
     if(!ok){
-      toast('Sheets sync failed — will keep retrying');
-      queuePush(label||action,function(retryCb){
-        doPostAction(action,key,payload,applyFn,function(ok2){if(retryCb)retryCb(ok2);});
-      },onSettle);
+      if(err==='not configured')toast('Not saved to Sheets — add the Sheets link in Settings','bad');
+      else if(err==='no staff email')toast('Not saved to Sheets yet — add your email in Settings','bad');
+      else toast('Sheets sync failed — will keep retrying','bad');
+      queuePush(label||action,attempt,onSettle);
     }
     if(cb)cb(ok,err,res);
   });
@@ -323,26 +341,29 @@ function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 document.addEventListener('visibilitychange',function(){
   if(!document.hidden&&sheetsConfigured())syncFromServer(function(ok){if(ok)refreshCurrentScreen();});
 });
-/* The phone's connection dropping/returning updates the sync strip right
-   away instead of waiting for the next poll, and reconnecting kicks off an
-   immediate sync + retry of anything that was waiting. */
-window.addEventListener('offline',function(){drawSyncStrip();});
+/* The phone's connection dropping/returning updates the header sync dot
+   right away instead of waiting for the next poll, and reconnecting kicks
+   off an immediate sync + retry of anything that was waiting. */
+window.addEventListener('offline',function(){drawSyncDot();});
 window.addEventListener('online',function(){
-  drawSyncStrip();
+  drawSyncDot();
   if(sheetsConfigured())queueRetryAll(function(){syncFromServer(function(ok){if(ok)refreshCurrentScreen();});});
 });
 
-/* Manual refresh button in the header (replaces the old, never-wired-up
-   language switcher): syncs right now instead of waiting up to POLL_MS. */
+/* Manual refresh button in the header: syncs right now instead of waiting
+   up to POLL_MS. Also the entry point into Settings when nothing is set up
+   yet — the small dot next to it is the only other sync indicator (no
+   permanent banner), so tapping here is how you find out why it's not
+   green and fix it. */
 function manualRefresh(){
-  if(!sheetsConfigured()){toast('Add the Sheets link in Settings to sync');return;}
+  if(!sheetsConfigured()||!SHEETS_STAFF_EMAIL){go('settings');return;}
   var btn=document.getElementById('btn-refresh');
   if(btn)btn.classList.add('spinning');
   queueRetryAll(function(){
     syncFromServer(function(ok,err){
       if(btn)btn.classList.remove('spinning');
-      if(ok){refreshCurrentScreen();toast('Synced with Google Sheets');}
-      else toast('Sync failed'+(err?(': '+err):''));
+      if(ok){refreshCurrentScreen();toast('Synced with Google Sheets','ok');}
+      else toast('Sync failed'+(err?(': '+err):''),'bad');
     });
   });
 }
@@ -478,7 +499,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='11', APP_UPDATED='Sep 12, 2026';
+var APP_VERSION='12', APP_UPDATED='Sep 12, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -703,7 +724,7 @@ function confirmInlineAdd(id,kind){
     cancelInlineAdd(id);
     if(id==='np-cat'||id==='np-brand')previewSku();
     else if(id==='pe-cat'||id==='pe-brand')previewPeSku();
-    toast((kind==='cat'?'Category':'Brand')+' "'+existing[dupIdx]+'" already exists — selected it');
+    toast((kind==='cat'?'Category':'Brand')+' "'+existing[dupIdx]+'" already exists — selected it','ok');
     return;
   }
   if(!confirm('Create new '+label+' "'+n+'"?\n\nDouble-check the spelling — this is what will show on every product using it.'))return;
@@ -712,7 +733,7 @@ function confirmInlineAdd(id,kind){
   cancelInlineAdd(id);
   if(id==='np-cat'||id==='np-brand')previewSku();
   else if(id==='pe-cat'||id==='pe-brand')previewPeSku();
-  toast((kind==='cat'?'Category':'Brand')+' "'+n+'" added');
+  toast((kind==='cat'?'Category':'Brand')+' "'+n+'" added','ok');
 }
 var CATCODE={'Beverages':'BEV','Rice':'RIC','Flour':'FLR','Oil':'OIL','Canned':'CAN',
              'Dry Goods':'DRY','Sunflower seeds':'SED','Sweets':'SWE','Dairy':'DAI','Meat':'MEA','Bakery':'BAK','Produce':'PRO','Frozen':'FRZ','Spices & Seasoning':'SPC','Snacks':'SNK','Tea & Coffee':'TEA','Pasta & Noodles':'PAS','Eggs':'EGG','Nuts & Dried Fruits':'NUT','Condiments & Sauces':'CON','Seafood':'SEA','Household & Cleaning':'HHC','Kitchenware & Cookware':'KIT','Personal Care':'PCR','Paper & Disposables':'PAP'};
@@ -770,7 +791,7 @@ document.getElementById('np-add').addEventListener('click',function(){
     var e=document.getElementById(id); if(e)e.innerHTML='';
   });
   setupFilters('stk'); setupFilters('mv');
-  toast(full+' created as '+sku+(boxes?' · '+boxes+' boxes added to delivery':''));
+  toast(full+' created as '+sku+(boxes?' · '+boxes+' boxes added to delivery':''),'ok');
   kpis(); rdraw();
   rcReset();
 });
@@ -950,13 +971,13 @@ document.getElementById('pe-save').addEventListener('click',function(){
   };
   if(prodIdx>=0){
     rec.sku=PRODUCTS[prodIdx].sku; rec.boxes=PRODUCTS[prodIdx].boxes;
-    PRODUCTS[prodIdx]=rec; toast(full+' saved');
+    PRODUCTS[prodIdx]=rec; toast(full+' saved','ok');
     postUpdateProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min},
       function(ok){rec._pending=!ok;refreshCurrentScreen();},
       function(ok){rec._pending=!ok;refreshCurrentScreen();});
   }else{
     rec.sku=makeSku(rec.cat,rec.brand); rec.boxes=0;
-    PRODUCTS.push(rec); toast(full+' created as '+rec.sku);
+    PRODUCTS.push(rec); toast(full+' created as '+rec.sku,'ok');
     postAddProduct({sku:rec.sku,name:nm,flavor:v('pe-flavor'),brand:rec.brand,unit:rec.unit,cat:rec.cat,upb:rec.upb,min:rec.min,supplier:rec.supplier},
       function(ok){rec._pending=!ok;refreshCurrentScreen();},
       function(ok){rec._pending=!ok;refreshCurrentScreen();});
@@ -993,7 +1014,7 @@ function renderStaff(){
     if(em!==null)p.email=em.trim();
     var rl=prompt('Role for '+p.name+' — type manager or worker',p.role);
     if(rl!==null&&(rl==='manager'||rl==='worker'))p.role=rl;
-    renderStaff(); toast(p.name+' updated');
+    renderStaff(); toast(p.name+' updated','ok');
     if(hadEmail)postUpdateStaff({name:p.name,email:p.email,role:p.role});
     else if(p.email)postAddStaff({name:p.name,email:p.email,role:p.role});
   });
@@ -1007,7 +1028,7 @@ document.getElementById('sf-add').addEventListener('click',function(){
   STAFF.push({name:n,email:email,role:role});
   document.getElementById('sf-name').value='';
   document.getElementById('sf-email').value='';
-  toast(n+' added'); renderStaff();
+  toast(n+' added','ok'); renderStaff();
   postAddStaff({name:n,email:email,role:role});
 });
 
@@ -1040,63 +1061,27 @@ function renderSettings(){
   document.getElementById('se2-staffemail').value=SHEETS_STAFF_EMAIL;
   drawSyncStatus();
 }
-/* Small green/red dot on the header refresh button — the same status the
-   Settings screen spells out in words, but visible from every screen so
-   you don't have to go into Settings just to see whether sync is working. */
+/* Small green/red dot on the header refresh button -- the ONLY persistent
+   sync indicator (there used to also be a big text banner under the header;
+   that was replaced with this because it sat there permanently and took up
+   space). Green and silent the moment everything is caught up; red the
+   moment anything isn't, whatever the reason (offline, not configured, no
+   staff email yet, a write still waiting to reach Sheets, or the last sync
+   attempt failing). Tapping the refresh button next to it retries right
+   now and reports the specific reason as a toast -- see manualRefresh(). */
+function syncIsBad(){
+  if(!sheetsConfigured())return true;
+  if(typeof navigator!=='undefined'&&navigator.onLine===false)return true;
+  if(!SHEETS_STAFF_EMAIL)return true;
+  if(SYNC_QUEUE.length>0)return true;
+  if(lastSyncErr)return true;
+  return !lastSyncOk;
+}
 function drawSyncDot(){
   var d=document.getElementById('sync-dot');
-  drawSyncStrip();
   if(!d)return;
   if(!sheetsConfigured()){d.className='sync-dot';return;}
-  d.className='sync-dot show'+((lastSyncOk&&!SYNC_QUEUE.length)?' ok':' bad');
-}
-/* Big, hard-to-miss status strip under the header, visible on every screen
-   — the tiny dot on the refresh button stays too, but this is the "I must
-   know whether it's synced or not" answer: green only when the last sync
-   succeeded AND every local write has actually reached the Sheet; red with
-   a plain-English reason otherwise. Tapping it opens Settings (if nothing
-   is configured yet) or retries right now. */
-function drawSyncStrip(){
-  var el=document.getElementById('sync-strip');
-  if(!el)return;
-  var pending=SYNC_QUEUE.length;
-  // navigator.onLine is only ever reliably FALSE — no wifi/cellular radio
-  // at all (airplane mode, dead zone). When it's false, say that plainly
-  // instead of the more confusing "Sheets link/email" messages below,
-  // since there's nothing to configure — it just needs a connection back.
-  if(typeof navigator!=='undefined'&&navigator.onLine===false){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#128246;</span><span class="tx">No internet connection'+(pending?' — '+pending+' change'+(pending===1?'':'s')+' waiting':'')+'</span><span class="ar">&rsaquo;</span>';
-  } else if(!sheetsConfigured()){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not connected to Google Sheets — tap to set up</span><span class="ar">&rsaquo;</span>';
-  } else if(!SHEETS_STAFF_EMAIL){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Add your email in Settings so your changes save</span><span class="ar">&rsaquo;</span>';
-  } else if(pending>0){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">'+pending+' change'+(pending===1?'':'s')+' not saved to Sheets yet — tap to retry</span><span class="ar">&rsaquo;</span>';
-  } else if(lastSyncErr){
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not synced: '+lastSyncErr+' — tap to retry</span><span class="ar">&rsaquo;</span>';
-  } else if(lastSyncOk){
-    el.className='syncstrip ok';
-    el.innerHTML='<span class="ic">&#10003;</span><span class="tx">Synced with Google Sheets</span><span class="ar">&rsaquo;</span>';
-  } else {
-    el.className='syncstrip bad';
-    el.innerHTML='<span class="ic">&#9888;</span><span class="tx">Not synced yet — tap to sync now</span><span class="ar">&rsaquo;</span>';
-  }
-}
-function tapSyncStrip(){
-  if(!sheetsConfigured()||!SHEETS_STAFF_EMAIL){go('settings');return;}
-  var btn=document.getElementById('btn-refresh'); if(btn)btn.classList.add('spinning');
-  queueRetryAll(function(){
-    syncFromServer(function(ok,err){
-      if(btn)btn.classList.remove('spinning');
-      refreshCurrentScreen();
-      toast(ok?'Synced with Google Sheets':('Sync failed'+(err?(': '+err):'')));
-    });
-  });
+  d.className='sync-dot show'+(syncIsBad()?' bad':' ok');
 }
 function drawSyncStatus(){
   drawSyncDot();
@@ -1137,19 +1122,19 @@ document.getElementById('se2-save').addEventListener('click',function(){
   SHEETS_STAFF_EMAIL=document.getElementById('se2-staffemail').value.trim();
   try{localStorage.setItem('uzb_api_url',SHEETS_API_URL);localStorage.setItem('uzb_staff_email',SHEETS_STAFF_EMAIL);}catch(e){}
   ME.email=SHEETS_STAFF_EMAIL;
-  kpis(); toast('Settings saved');
+  kpis(); toast('Settings saved','ok');
   if(sheetsConfigured())syncFromServer(function(){drawSyncStatus();});
   startPolling();
   go('menu');
 });
 document.getElementById('se2-syncnow').addEventListener('click',function(){
   SHEETS_API_URL=document.getElementById('se2-api').value.trim()||DEFAULT_SHEETS_API_URL;
-  if(!sheetsConfigured()){toast('Add the Sheets link first');return;}
+  if(!sheetsConfigured()){toast('Add the Sheets link first','bad');return;}
   toast('Syncing…');
   queueRetryAll(function(){
     syncFromServer(function(ok,err){
       drawSyncStatus();
-      toast(ok?'Synced with Google Sheets':('Sync failed: '+err));
+      toast(ok?'Synced with Google Sheets':('Sync failed: '+err),ok?'ok':'bad');
     });
   });
 });
@@ -1467,7 +1452,7 @@ function applyBrand(brand,cust){
     if(bs!==null)p.price=bs;
     if(cb!==null)CUSTOM[cust+'|'+p.sku]=cb;
   });
-  toast(members.length+' '+brand+' products updated');
+  toast(members.length+' '+brand+' products updated','ok');
   drawPrices(); kpis();
 }
 /* cost is set when goods are received, never typed here */
@@ -1620,14 +1605,14 @@ document.getElementById('ce-save').addEventListener('click',function(){
   var sheetsType=(v('ce-kind')==='transfer')?'Own Market':'Wholesale Restaurant';
   if(editIdx>=0){
     var old=CUSTOMERS[editIdx];
-    rec.key=old.key;rec.id=old.id;CUSTOMERS[editIdx]=rec;toast(name+' saved');
+    rec.key=old.key;rec.id=old.id;CUSTOMERS[editIdx]=rec;toast(name+' saved','ok');
     if(old.id)postUpdateCustomer({id:old.id,name:name,type:sheetsType,contact:rec.contact,phone:rec.phone});
     // no server id yet -> this customer predates the Sheets connection (e.g. built-in
     // seed data) and was never actually written there. Saving it now creates it.
     else postAddCustomer({name:name,type:sheetsType,contact:rec.contact,phone:rec.phone});
   }else{
     rec.key='C'+(CUSTOMERS.length+1)+Math.floor(Math.random()*90);CUSTOMERS.push(rec);
-    toast(name+' added');
+    toast(name+' added','ok');
     postAddCustomer({name:name,type:sheetsType,contact:rec.contact,phone:rec.phone});
   }
   renderCusts(); kpis(); go('custs');
@@ -1665,7 +1650,7 @@ document.getElementById('se-save').addEventListener('click',function(){
   }
   var sel=document.getElementById('rc-sup');
   if(sel)sel.innerHTML=SUPPLIERS.map(function(x){return '<option>'+x.name+'</option>'}).join('');
-  toast(name+' saved'); renderCusts(); go('custs');
+  toast(name+' saved','ok'); renderCusts(); go('custs');
 });
 (function(){
   var t=document.querySelectorAll('.tab[data-ct]');
@@ -1690,10 +1675,18 @@ document.getElementById('se-save').addEventListener('click',function(){
 var APP_VARIANT=/manager\.html/i.test(location.pathname)?'manager':'worker';
 function isManager(){return APP_VARIANT==='manager';}
 var toastTimer=null;
-function toast(msg){
+/* type: 'ok' (green — something succeeded/confirmed), 'bad' (red — something
+   really failed or was declined), or omitted (neutral dark — a plain notice
+   or a "fix this first" nudge, neither a success nor a failure). Every
+   toast used to be red regardless of what it meant, which made confirmations
+   ("Voided", "Synced", "Product saved") look like errors. */
+function toast(msg,type){
   var t=document.getElementById('toast');
   if(!t)return;
-  t.textContent=msg;t.classList.add('on');
+  t.textContent=msg;
+  t.classList.remove('ok','bad');
+  if(type==='ok'||type==='bad')t.classList.add(type);
+  t.classList.add('on');
   clearTimeout(toastTimer);
   toastTimer=setTimeout(function(){t.classList.remove('on')},2600);
 }
@@ -1782,7 +1775,7 @@ document.getElementById('rv-go').addEventListener('click',function(){
   var id=document.getElementById('rv-cust').value;
   if(!id){alert('Select a destination first');return;}
   var c=findCust(id);
-  if(!c){toast('Could not find that customer');return;}
+  if(!c){toast('Could not find that customer','bad');return;}
   var a=basketArr(),bx=0,un=0;
   var lines=a.map(function(it){
     var p=prod(it.sku);
@@ -1964,7 +1957,7 @@ function canVoid(h){
 }
 function confirmVoid(id){
   var h=null;for(var i=0;i<HISTORY.length;i++)if(HISTORY[i].id===id){h=HISTORY[i];break;}
-  if(!canVoid(h)){toast('This movement can no longer be voided');return;}
+  if(!canVoid(h)){toast('This movement can no longer be voided','bad');return;}
   var bx=0;for(var i=0;i<h.lines.length;i++)bx+=h.lines[i].boxes;
   if(!confirm('Void '+movementId(h.id)+'?\n\n'+movementKind(h.type)+' of '+bx+' box'+(bx===1?'':'es')+' will be reversed with a new VOID entry. The original stays in History for the record -- nothing is deleted.'))return;
   voidMovement(id);
@@ -1986,7 +1979,7 @@ function voidMovement(id){
   postMovements('Void',lines,{notes:'Ref '+num+' · Void of '+h.id},
     function(ok){rec._pending=!ok;refreshCurrentScreen();},
     function(ok){rec._pending=!ok;refreshCurrentScreen();});
-  toast('Voided '+movementId(h.id));
+  toast('Voided '+movementId(h.id),'ok');
   kpis();
   detail(num);
 }
@@ -2161,7 +2154,7 @@ document.getElementById('rc-ed-commit').addEventListener('click',function(){
   var p=prod(rcActiveSku); if(!p)return;
   var n=parseInt(document.getElementById('rc-ed-qty').value,10)||0;
   rsetQty(p.sku,n);
-  toast(n>0?(n+' box'+(n===1?'':'es')+' of '+p.name+' added to delivery'):(p.name+' removed from this delivery'));
+  toast(n>0?(n+' box'+(n===1?'':'es')+' of '+p.name+' added to delivery'):(p.name+' removed from this delivery'),'ok');
   rcReset();
 });
 document.getElementById('rc-ed-cancel').addEventListener('click',rcReset);
@@ -2345,10 +2338,10 @@ function renderStats(){
 
 /* ---------------- PDF ---------------- */
 function pdfAction(m,mode){
-  if(!m){toast('No movement selected');return;}
+  if(!m){toast('No movement selected','bad');return;}
   var doc;
-  try{ doc=buildPDF(m); }catch(e){ toast('Could not build PDF: '+e.message); return; }
-  if(!doc){toast('No movement selected');return;}
+  try{ doc=buildPDF(m); }catch(e){ toast('Could not build PDF: '+e.message,'bad'); return; }
+  if(!doc){toast('No movement selected','bad');return;}
   var name=m.id+'.pdf';
 
   // open: render in a new tab so it can be read before sending
@@ -2381,10 +2374,10 @@ function downloadPdf(doc,name){
     a.href=url; a.download=name; a.rel='noopener';
     document.body.appendChild(a); a.click();
     setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },1500);
-    toast('PDF saved as '+name);
+    toast('PDF saved as '+name,'ok');
   }catch(e){
-    try{ doc.save(name); toast('PDF saved'); }
-    catch(e2){ toast('This browser blocked the download. Try Safari or Chrome.'); }
+    try{ doc.save(name); toast('PDF saved','ok'); }
+    catch(e2){ toast('This browser blocked the download. Try Safari or Chrome.','bad'); }
   }
 }
 
@@ -2500,5 +2493,5 @@ document.addEventListener('keydown',function(e){
 setupFilters('stk');setupFilters('mv');
 wireCatBar('stk',renderStock);wireCatBar('mv',renderMove);
 kpis();drawBasket();
-if(sheetsConfigured())syncFromServer(function(ok,err){if(!ok)toast('Sheets sync failed — showing last-known stock');});
+if(sheetsConfigured())syncFromServer(function(ok,err){if(!ok)toast('Sheets sync failed — showing last-known stock','bad');});
 startPolling();

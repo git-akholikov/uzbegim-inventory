@@ -329,11 +329,17 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
   .mbtn{padding:11px 12px}
 }
 
+/* Neutral by default (a notice or a "fix this first" nudge -- not a
+   success and not a failure); .ok turns it green (something succeeded or
+   synced), .bad turns it red (something actually failed or was declined).
+   Everything used to be red, which made confirmations look like errors. */
 .toast{position:absolute;left:50%;transform:translateX(-50%) translateY(-14px);bottom:112px;
- background:#B4443F;color:#fff;padding:10px 16px;border-radius:11px;font-size:11.5px;font-weight:700;
+ background:#3f3b34;color:#fff;padding:10px 16px;border-radius:11px;font-size:11.5px;font-weight:700;
  z-index:80;box-shadow:0 6px 20px rgba(0,0,0,.22);opacity:0;pointer-events:none;
- transition:opacity .18s,transform .18s;max-width:86%;text-align:center;line-height:1.4}
+ transition:opacity .18s,transform .18s,background .15s;max-width:86%;text-align:center;line-height:1.4}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.ok{background:#1f7a44}
+.toast.bad{background:#B4443F}
 .qty input.over{border-color:#B4443F;background:#FDF0F0;color:#B4443F}
 .c-rem.none{color:#B4443F !important;font-weight:800}
 .req{font-size:9px;font-weight:800;color:#C1622D;letter-spacing:.3px;margin-left:5px}
