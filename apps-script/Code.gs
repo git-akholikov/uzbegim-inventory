@@ -202,7 +202,7 @@ function readMovements(ss) {
   if (rows.length > LIMIT) rows = rows.slice(rows.length - LIMIT);
   return rows.map(function (r) {
     return {
-      id: r['Movement ID'], date: r['Date'], type: r['Type'],
+      id: r['Movement ID'], date: fmtDate(r['Date']), type: r['Type'],
       qty: Number(r['Quantity (enter positive)']) || 0,
       signedQty: Number(r['Signed Qty (calculated)']) || 0,
       productId: r['Product ID'],
@@ -248,10 +248,36 @@ function readLogs(ss) {
   if (rows.length > LIMIT) rows = rows.slice(rows.length - LIMIT);
   return rows.map(function (r) {
     return {
-      ts: r['Timestamp'], staffEmail: r['Staff Email'] || '', staffName: r['Staff Name'] || '',
+      ts: fmtTimestamp(r['Timestamp']), staffEmail: r['Staff Email'] || '', staffName: r['Staff Name'] || '',
       action: r['Action'] || '', entity: r['Entity'] || '', details: r['Details'] || ''
     };
   });
+}
+
+// Both the Movements "Date" column and the Logs "Timestamp" column are
+// written as plain formatted strings ('yyyy-MM-dd' / 'yyyy-MM-dd HH:mm'),
+// but Google Sheets silently reinterprets text that looks like a date/time
+// as a real Date-typed cell on save -- so reading it back with
+// getValues() can hand us a JS Date object instead of the string we wrote,
+// which then serializes to a full ISO timestamp ("2026-09-12T07:00:00.000Z")
+// in the JSON response. That broke two things client-side: the frontend's
+// same-day "Void this movement" check (which compares the movement's date
+// against today's date as a plain 'yyyy-MM-dd' string) and its date
+// formatting on the History detail screen (which assumes exactly that
+// format and garbled into text like "11T07:00:00.000Z Sep 2026" otherwise).
+// Reformatting defensively here, at read time, fixes it regardless of
+// whatever type the cell actually ended up as.
+function fmtDate(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, Session.getScriptTimeZone() || 'America/New_York', 'yyyy-MM-dd');
+  }
+  return v;
+}
+function fmtTimestamp(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, Session.getScriptTimeZone() || 'America/New_York', 'yyyy-MM-dd HH:mm');
+  }
+  return v;
 }
 
 /* ───────────────── writing ───────────────── */
