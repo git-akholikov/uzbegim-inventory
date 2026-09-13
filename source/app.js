@@ -168,7 +168,12 @@ function applyServerMovements(list){
     var rows=groups[num].rows,first=rows[0];
     var type=first.type==='Receiving'?'receipt':first.type==='Customer Stock-Out'?'invoice':
       (first.type==='Stock Count Adjustment'?'adjustment':(first.type==='Void'?'void':'transfer'));
-    var custName='Stock count';
+    // 'Stock count' is only the right default for an actual Stock Count
+    // Adjustment -- a transfer/stock-out/void with no destination filled in
+    // (e.g. a row typed straight into the Sheet without a Customer ID) used
+    // to fall through to this same default too, mislabeling it as a stock
+    // count in History even though it was nothing of the kind.
+    var custName=type==='adjustment'?'Stock count':'';
     if(type==='receipt'){var s=findSupById(first.supplierId);custName=s?s.name:(first.supplierId||'');}
     else if(first.customerId){var c=findCust(first.customerId);custName=c?c.name:first.customerId;}
     var staff=STAFF.filter(function(x){return x.email===first.staffEmail;})[0];
@@ -499,7 +504,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='12', APP_UPDATED='Sep 12, 2026';
+var APP_VERSION='13', APP_UPDATED='Sep 13, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
