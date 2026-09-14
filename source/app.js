@@ -527,7 +527,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='15', APP_UPDATED='Sep 13, 2026';
+var APP_VERSION='16', APP_UPDATED='Sep 14, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -1094,8 +1094,23 @@ function renderSettings(){
   document.getElementById('se2-when').value=SETTINGS.emailWhen;
   document.getElementById('se2-api').value=SHEETS_API_URL;
   document.getElementById('se2-staffemail').value=SHEETS_STAFF_EMAIL;
+  // Warehouse letterhead / owner-notification prefs are business-wide, not
+  // per-person -- a worker signing in for the first time has no reason to
+  // see or touch them (they already come with sensible built-in defaults),
+  // so they're manager-only, the same way Staff/Logs already are.
+  var ownerSection=document.getElementById('se2-ownersection');
+  if(ownerSection)ownerSection.style.display=isManager()?'':'none';
   drawSyncStatus();
 }
+(function(){
+  var t=document.getElementById('se2-advtoggle'),adv=document.getElementById('se2-adv');
+  if(!t||!adv)return;
+  t.addEventListener('click',function(){
+    var show=adv.style.display==='none';
+    adv.style.display=show?'':'none';
+    t.textContent=show?'Hide sync server':'Change sync server…';
+  });
+})();
 /* Small green/red dot on the header refresh button -- the ONLY persistent
    sync indicator (there used to also be a big text banner under the header;
    that was replaced with this because it sat there permanently and took up
@@ -1139,6 +1154,21 @@ function drawSyncStatus(){
     el.className='fg syncstatus';
   }
 }
+// Shared by both buttons below so the two can never drift out of sync with
+// each other again -- Save & Sync used to only re-read the API URL field,
+// silently ignoring anything just typed into "Your email" until Save
+// settings was pressed too. Now whichever button is pressed, both Sheets
+// fields are the ones actually on screen at that moment.
+function saveSyncFields(){
+  // Blank field falls back to the built-in default rather than turning sync
+  // off — there's only ever been one Sheet for this team, so an empty box
+  // (e.g. right after browser storage got wiped) should never mean "stop
+  // syncing", just "use the address that's already built into the app".
+  SHEETS_API_URL=document.getElementById('se2-api').value.trim()||DEFAULT_SHEETS_API_URL;
+  SHEETS_STAFF_EMAIL=document.getElementById('se2-staffemail').value.trim();
+  try{localStorage.setItem('uzb_api_url',SHEETS_API_URL);localStorage.setItem('uzb_staff_email',SHEETS_STAFF_EMAIL);}catch(e){}
+  ME.email=SHEETS_STAFF_EMAIL;
+}
 document.getElementById('se2-save').addEventListener('click',function(){
   SETTINGS.bizName=document.getElementById('se2-name').value.trim();
   SETTINGS.line1=document.getElementById('se2-line1').value.trim();
@@ -1149,21 +1179,14 @@ document.getElementById('se2-save').addEventListener('click',function(){
   SETTINGS.ownerEmail=document.getElementById('se2-email').value.trim();
   SETTINGS.emailWhen=document.getElementById('se2-when').value;
   OWNER_EMAIL=SETTINGS.ownerEmail;
-  // Blank field falls back to the built-in default rather than turning sync
-  // off — there's only ever been one Sheet for this team, so an empty box
-  // (e.g. right after browser storage got wiped) should never mean "stop
-  // syncing", just "use the address that's already built into the app".
-  SHEETS_API_URL=document.getElementById('se2-api').value.trim()||DEFAULT_SHEETS_API_URL;
-  SHEETS_STAFF_EMAIL=document.getElementById('se2-staffemail').value.trim();
-  try{localStorage.setItem('uzb_api_url',SHEETS_API_URL);localStorage.setItem('uzb_staff_email',SHEETS_STAFF_EMAIL);}catch(e){}
-  ME.email=SHEETS_STAFF_EMAIL;
+  saveSyncFields();
   kpis(); toast('Settings saved','ok');
   if(sheetsConfigured())syncFromServer(function(){drawSyncStatus();});
   startPolling();
   go('menu');
 });
 document.getElementById('se2-syncnow').addEventListener('click',function(){
-  SHEETS_API_URL=document.getElementById('se2-api').value.trim()||DEFAULT_SHEETS_API_URL;
+  saveSyncFields();
   if(!sheetsConfigured()){toast('Add the Sheets link first','bad');return;}
   toast('Syncing…');
   queueRetryAll(function(){
