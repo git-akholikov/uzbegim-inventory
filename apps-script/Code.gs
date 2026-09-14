@@ -216,9 +216,19 @@ function readMovements(ss) {
 
 function findActiveStaff(ss, email) {
   if (!email) return null;
+  // Case/whitespace-tolerant match: a phone keyboard can easily send
+  // "Name@Gmail.com " (auto-capitalized, trailing space from autocomplete)
+  // even though the Staff tab has "name@gmail.com" -- this used to require
+  // an exact === match, which silently rejected an otherwise-correctly-set-up
+  // staff row and left every movement from that device stuck "not synced"
+  // forever with no obvious cause. Same normalization already used for the
+  // same reason in appendStaffRow's own-email idempotency check below.
+  var norm = String(email).trim().toLowerCase();
   var rows = readTable(ss, TAB.staff);
   for (var i = 0; i < rows.length; i++) {
-    if (rows[i]['Email (Google Account)'] === email && rows[i]['Active (Y/N)'] === 'Y') return rows[i];
+    var rowEmail = String(rows[i]['Email (Google Account)'] || '').trim().toLowerCase();
+    var rowActive = String(rows[i]['Active (Y/N)'] || '').trim().toLowerCase();
+    if (rowEmail === norm && rowActive === 'y') return rows[i];
   }
   return null;
 }
@@ -234,7 +244,7 @@ function readStaffList(ss) {
   // "Manager"/"Worker", capitalized).
   return readTable(ss, TAB.staff).map(function (r) {
     return { email: r['Email (Google Account)'], name: r['Name'], role: isManagerRole(r['Role']) ? 'manager' : 'worker', active: r['Active (Y/N)'] };
-  }).filter(function (s) { return s.active === 'Y' && s.email; });
+  }).filter(function (s) { return String(s.active || '').trim().toLowerCase() === 'y' && s.email; });
 }
 
 function readLogs(ss) {
@@ -331,6 +341,24 @@ function appendMovements(ss, movements, staff) {
       return String(r['Notes'] || '').indexOf('Ref ' + refMatch[1]) > -1;
     });
     if (already) return [];
+  }
+  // Second, separate guard: two different phones can both have a movement's
+  // "Void this movement" button enabled at the same time (each only checks
+  // its OWN last-synced copy of History for an existing void), and if both
+  // people tap it before either sync reaches the other phone, each one sends
+  // its own independently-Ref'd Void batch here -- the check above doesn't
+  // catch that, since they're genuinely different requests, not retries of
+  // the same one. Without this, the same movement gets reversed twice,
+  // silently sending stock further off than it should be. So also check
+  // whether ANY row already carries "Void of <that same original id>" --
+  // if one does, this is a second void of something already voided, and it
+  // is dropped the same way a retried duplicate is.
+  var voidOfMatch = movements.length && /Void of (\S+)/.exec(movements[0].notes || '');
+  if (voidOfMatch) {
+    var alreadyVoided = readTable(ss, TAB.movements).some(function (r) {
+      return String(r['Notes'] || '').indexOf('Void of ' + voidOfMatch[1]) > -1;
+    });
+    if (alreadyVoided) return [];
   }
   var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'America/New_York', 'yyyy-MM-dd');
   var next = maxIdNumber(sh, 'M') + 1;
@@ -563,6 +591,85 @@ function appendLog(ss, staff, action, entity, details) {
       'Details': details
     });
   } catch (e) { }
+}
+
+/* ═══════════════ ONE-TIME MAINTENANCE (not part of the Web App) ═══════════════
+ * applyFreshStart() -- run this manually from THIS editor (never called by
+ * the phone app, no URL triggers it) when you want to wipe the Movements
+ * and Logs history clean and start over, while keeping Products, Customers,
+ * Suppliers, and Staff exactly as they are, and giving every product a real
+ * opening balance instead of starting everyone at 0.
+ *
+ * How to use:
+ *   1. On the Products tab, add ONE new column with the header text typed
+ *      exactly as: Opening Count (temporary)
+ *      Then, for every active product, type in today's real physical count
+ *      (0 for anything with none on hand right now).
+ *   2. Paste this whole updated file in here (Extensions > Apps Script),
+ *      Save, pick "applyFreshStart" from the function dropdown at the top
+ *      of this editor, click Run, and approve the permission prompt if one
+ *      shows up (only needs to happen once).
+ *   3. Open View > Executions (or the log box that pops up after it runs)
+ *      to see a one-line summary of what it did.
+ *   4. Done -- Movements and Logs are now empty (new Movement IDs restart
+ *      at M0001), every product with a count you entered has one opening
+ *      "Stock Count Adjustment" row for that amount, and the temporary
+ *      column is removed automatically. Nothing else on the sheet changes.
+ *   5. Redeploy as usual afterward (Manage deployments > pencil icon >
+ *      New version > Deploy) so the app picks up any other code changes
+ *      that came in this same paste.
+ *
+ * Safe to run more than once by accident: it always clears Movements/Logs
+ * before re-adding balances, so re-running just re-applies the same counts
+ * -- it never doubles them up. If the temporary column is already gone
+ * (because a previous run already removed it), it stops with a clear error
+ * instead of doing anything.
+ */
+function applyFreshStart() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var productsSh = ss.getSheetByName(TAB.products);
+  if (!productsSh) throw new Error('Products tab not found');
+
+  var headers = productsSh.getRange(1, 1, 1, productsSh.getLastColumn()).getValues()[0];
+  var countCol = headers.indexOf('Opening Count (temporary)');
+  if (countCol === -1) {
+    throw new Error('Add a column named exactly "Opening Count (temporary)" to the Products tab, fill in real counts for every active product, then run this again.');
+  }
+  var idCol = headers.indexOf('Product ID');
+  var activeCol = headers.indexOf('Active (Y/N)');
+
+  var values = productsSh.getDataRange().getValues();
+  var openingMovements = [];
+  for (var r = 1; r < values.length; r++) {
+    var sku = values[r][idCol];
+    if (!sku) continue;
+    if (activeCol > -1 && values[r][activeCol] !== 'Y') continue; // inactive products don't need a balance
+    var count = Number(values[r][countCol]);
+    if (isNaN(count) || count === 0) continue; // ledger is about to be empty -- 0 needs no row at all
+    openingMovements.push({
+      type: 'Stock Count Adjustment', productId: sku, qty: count,
+      notes: 'Opening balance — fresh-start reset'
+    });
+  }
+
+  // Wipe Movements and Logs down to just their header row -- Products,
+  // Customers, Suppliers, and Staff are never touched here.
+  [TAB.movements, TAB.logs].forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) return;
+    var last = sh.getLastRow();
+    if (last > 1) sh.getRange(2, 1, last - 1, sh.getLastColumn()).clearContent();
+  });
+
+  var staff = { 'Email (Google Account)': 'abduraufkholikov@gmail.com', 'Name': 'Abdu' };
+  var ids = appendMovements(ss, openingMovements, staff);
+
+  // The temporary column has done its job -- remove it so it doesn't linger
+  // and confuse a future product edit.
+  productsSh.deleteColumn(countCol + 1);
+
+  Logger.log('Fresh-start reset complete: Movements and Logs cleared. ' +
+    ids.length + ' product(s) given an opening balance: ' + JSON.stringify(ids));
 }
 
 /* ───────────────── helpers ───────────────── */

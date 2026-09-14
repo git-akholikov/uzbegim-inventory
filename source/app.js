@@ -198,8 +198,19 @@ function syncFromServer(cb){
     applyServerProducts(res.products);
     applyServerCustomers(res.customers);
     applyServerSuppliers(res.suppliers);
-    applyServerMovements(res.movements);
+    // Staff MUST be applied before Movements: applyServerMovements looks up
+    // each movement's "who" by matching STAFF against that row's staff
+    // email, but only for movements this device has never seen before --
+    // once resolved, that name is frozen into HISTORY and never
+    // re-resolved. If a movement from a person whose email isn't in this
+    // device's STAFF list yet (e.g. a co-worker just added on another
+    // phone) gets processed on the same sync that WOULD have brought in
+    // their entry, doing movements first means the lookup misses and the
+    // name is stuck wrong (or blank) forever, even though the very next
+    // line was about to fix it. Applying Staff first means a newly synced
+    // person's movements resolve correctly the first time they're seen.
     applyServerStaff(res.staff);
+    applyServerMovements(res.movements);
     applyServerLogs(res.logs);
     lastSyncOk=true;lastSyncErr='';
     kpis();
@@ -367,7 +378,19 @@ function manualRefresh(){
   queueRetryAll(function(){
     syncFromServer(function(ok,err){
       if(btn)btn.classList.remove('spinning');
-      if(ok){refreshCurrentScreen();toast('Synced with Google Sheets','ok');}
+      if(ok){
+        refreshCurrentScreen();
+        // Pulling the latest data from Sheets can succeed on its own even when
+        // one or more queued writes just failed their retry again (a movement
+        // stuck behind a bad staff email, a flaky connection, etc.) -- this
+        // used to say "Synced with Google Sheets" regardless, while the
+        // header dot correctly stayed red for the still-pending change. That
+        // looked like a lying toast / a stuck dot with no explanation. Say
+        // what actually happened instead: only claim full success once the
+        // queue that drives the dot is actually empty.
+        if(SYNC_QUEUE.length)toast(SYNC_QUEUE.length+' change'+(SYNC_QUEUE.length===1?'':'s')+' still waiting to sync — open Settings for details','bad');
+        else toast('Synced with Google Sheets','ok');
+      }
       else toast('Sync failed'+(err?(': '+err):''),'bad');
     });
   });
@@ -504,7 +527,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='13', APP_UPDATED='Sep 13, 2026';
+var APP_VERSION='15', APP_UPDATED='Sep 13, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -855,8 +878,15 @@ document.getElementById('rv2-go').addEventListener('click',function(){
 
 
 /* ══════════ PRODUCTS (visible to everyone) ══════════ */
-var STAFF=[{name:'Abdu',email:'abduraufkholikov@gmail.com',role:'manager'},
-           {name:'Nodir',email:'',role:'worker'}];
+// Only the owner's own account is seeded here -- real staff always come from
+// the Staff tab via applyServerStaff() once synced. A second, fake placeholder
+// entry used to sit here as sample/demo data; it's gone now because a real
+// worker sharing that same first name (very possible with a small team) would
+// collide with it -- the "add staff" form's own-name duplicate check would
+// refuse to add them ("X already exists"), nudging you to edit the fake
+// placeholder in place instead of really adding the person, which is a
+// confusing way to end up with the right result by accident.
+var STAFF=[{name:'Abdu',email:'abduraufkholikov@gmail.com',role:'manager'}];
 var SETTINGS={bizName:'UZBEGIM FOOD MARKET',
   line1:'Wholesale Warehouse \u00b7 Cincinnati, Ohio',
   line2:'abduraufkholikov@gmail.com',
