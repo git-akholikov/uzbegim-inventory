@@ -638,6 +638,15 @@ function applyFreshStart() {
   var idCol = headers.indexOf('Product ID');
   var activeCol = headers.indexOf('Active (Y/N)');
 
+  // Every opening-balance row shares ONE "Ref <id>" marker, the same
+  // convention the phone app stamps on every real transaction (see
+  // postMovements in app.js). Without it, each row has no shared marker to
+  // group by, so applyServerMovements() in app.js falls back to showing its
+  // raw internal Movement ID (M0001, M0002, ...) instead of a proper code --
+  // and it shows as one separate History entry per product instead of one
+  // clean "opening balance" entry for the whole reset.
+  var resetRef = 'ADJ-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'America/New_York', 'yyyyMMdd') + '-' + (Math.floor(Math.random() * 900) + 100);
+
   var values = productsSh.getDataRange().getValues();
   var openingMovements = [];
   for (var r = 1; r < values.length; r++) {
@@ -648,7 +657,7 @@ function applyFreshStart() {
     if (isNaN(count) || count === 0) continue; // ledger is about to be empty -- 0 needs no row at all
     openingMovements.push({
       type: 'Stock Count Adjustment', productId: sku, qty: count,
-      notes: 'Opening balance — fresh-start reset'
+      notes: 'Ref ' + resetRef + ' · Opening balance — fresh-start reset'
     });
   }
 
