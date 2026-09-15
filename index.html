@@ -1091,6 +1091,19 @@ var SUPPLIERS=[
 {name:'FOODIELUX',phone:'',email:'',contact:'',address:'',city:'',state:'',zip:'',terms:'',notes:''}];
 var _now=new Date();
 var TODAY=_now.getFullYear()+'-'+('0'+(_now.getMonth()+1)).slice(-2)+'-'+('0'+_now.getDate()).slice(-2);
+/* Every receiving/stock-out/transfer/adjustment/void gets a short
+   TYPE-MMDD-XX code (e.g. "RCV-0915-42") -- no year, since the date's
+   already shown right next to it everywhere it's displayed. Leaving the
+   year out only works because the backend's duplicate-detection (see
+   recentMovementRows in Code.gs) only looks at the last 30 days of the
+   ledger, not the whole multi-year history -- so a collision would need
+   the same type, same day-of-year, same 2-digit number, AND land within
+   30 days of each other, which never happens in practice. */
+function shortRef(prefix){
+  var mm=TODAY.slice(5,7),dd=TODAY.slice(8,10);
+  var n=Math.floor(Math.random()*90)+10;
+  return prefix+'-'+mm+dd+'-'+n;
+}
 var basket={},lastMovement=null,lastScreen='menu';
 var ME={name:'Abdu',role:'manager',email:''};
 
@@ -1601,7 +1614,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='17', APP_UPDATED='Sep 14, 2026';
+var APP_VERSION='18', APP_UPDATED='Sep 15, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -1930,7 +1943,7 @@ document.getElementById('rv2-go').addEventListener('click',function(){
     bx+=it.qty; un+=it.qty*it.upb;
     return {sku:it.sku,name:it.name,boxes:it.qty,upb:it.upb,price:0,cost:0};
   });
-  var num='RCV-'+TODAY.replace(/-/g,'')+'-'+(Math.floor(Math.random()*900)+100);
+  var num=shortRef('RCV');
   var d=new Date();
   var rec={id:num,type:'receipt',cust:sup,date:TODAY,
     time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),
@@ -2365,7 +2378,7 @@ document.getElementById('cb-go').addEventListener('click',function(){
   }
   if(!lines.length)return;
   if(!confirm('Post '+lines.length+' adjustment'+(lines.length===1?'':'s')+'?\n\nStock will be set to what you counted. This is recorded permanently.'))return;
-  var num='ADJ-'+TODAY.replace(/-/g,'')+'-'+(Math.floor(Math.random()*900)+100);
+  var num=shortRef('ADJ');
   var d=new Date();
   var rec={id:num,type:'adjustment',cust:'Stock count',date:TODAY,
     time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),
@@ -2914,7 +2927,7 @@ document.getElementById('rv-go').addEventListener('click',function(){
     bx+=it.qty;un+=it.qty*it.upb;
     return{sku:it.sku,name:it.name,boxes:it.qty,upb:it.upb,price:0,cost:0,cat:it.cat,brand:it.brand};});
   var d=new Date();
-  var num=(c.kind==='transfer'?'MOV-':'OUT-')+TODAY.replace(/-/g,'')+'-'+(Math.floor(Math.random()*900)+100);
+  var num=shortRef(c.kind==='transfer'?'MOV':'OUT');
   var rec={id:num,type:c.kind,cust:c.name,date:TODAY,time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),who:'Abdu',ref:'',notes:document.getElementById('rv-notes').value,lines:lines};
   HISTORY.unshift(rec);lastMovement=rec;
   for(var j=0;j<a.length;j++)prod(a[j].sku).boxes-=a[j].qty;
@@ -3101,7 +3114,7 @@ function voidMovement(id){
     var eff=movementSignedEffect(h.type,l);
     return{sku:l.sku,name:l.name,upb:l.upb,price:0,cost:0,boxes:Math.abs(eff),delta:-eff,dir:(-eff>0?'found':'missing')};
   });
-  var num='VOID-'+TODAY.replace(/-/g,'')+'-'+(Math.floor(Math.random()*900)+100);
+  var num=shortRef('VOID');
   var d=new Date();
   var rec={id:num,type:'void',cust:h.cust,date:TODAY,
     time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),

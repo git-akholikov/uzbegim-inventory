@@ -324,6 +324,26 @@ function maxIdNumber(sh, prefix) {
   return max;
 }
 
+function recentMovementRows(ss, days) {
+  // The idempotency checks in appendMovements() only need to catch a
+  // genuine RETRY of a write that already landed -- not a coincidental
+  // match against something from months or years ago. Scanning the full,
+  // ever-growing Movements ledger on every single write also gets slower
+  // the longer this app is used. Scoping the scan to a rolling recent
+  // window keeps both the retry-safety guarantee and the write speed
+  // intact no matter how big the ledger gets -- and it's what makes the
+  // app's short, year-free movement codes (RCV-0915-42, not
+  // RCV-20260915-142 -- see shortRef in app.js) safe to reuse every year:
+  // a collision would need the same type, same day-of-month, same random
+  // number, AND land within `days` of each other, which never happens.
+  var cutoff = Utilities.formatDate(
+    new Date(new Date().getTime() - days * 24 * 60 * 60 * 1000),
+    Session.getScriptTimeZone() || 'America/New_York', 'yyyy-MM-dd');
+  return readTable(ss, TAB.movements).filter(function (r) {
+    return fmtDate(r['Date']) >= cutoff;
+  });
+}
+
 function appendMovements(ss, movements, staff) {
   var sh = ss.getSheetByName(TAB.movements);
   if (!sh) throw new Error('Movements tab not found');
@@ -337,7 +357,7 @@ function appendMovements(ss, movements, staff) {
   // match as "already applied, nothing to do" instead of doing it again.
   var refMatch = movements.length && /Ref\s+([A-Za-z0-9-]+)/.exec(movements[0].notes || '');
   if (refMatch) {
-    var already = readTable(ss, TAB.movements).some(function (r) {
+    var already = recentMovementRows(ss, 30).some(function (r) {
       return String(r['Notes'] || '').indexOf('Ref ' + refMatch[1]) > -1;
     });
     if (already) return [];
@@ -355,7 +375,7 @@ function appendMovements(ss, movements, staff) {
   // is dropped the same way a retried duplicate is.
   var voidOfMatch = movements.length && /Void of (\S+)/.exec(movements[0].notes || '');
   if (voidOfMatch) {
-    var alreadyVoided = readTable(ss, TAB.movements).some(function (r) {
+    var alreadyVoided = recentMovementRows(ss, 30).some(function (r) {
       return String(r['Notes'] || '').indexOf('Void of ' + voidOfMatch[1]) > -1;
     });
     if (alreadyVoided) return [];
@@ -640,12 +660,14 @@ function applyFreshStart() {
 
   // Every opening-balance row shares ONE "Ref <id>" marker, the same
   // convention the phone app stamps on every real transaction (see
-  // postMovements in app.js). Without it, each row has no shared marker to
-  // group by, so applyServerMovements() in app.js falls back to showing its
-  // raw internal Movement ID (M0001, M0002, ...) instead of a proper code --
-  // and it shows as one separate History entry per product instead of one
-  // clean "opening balance" entry for the whole reset.
-  var resetRef = 'ADJ-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'America/New_York', 'yyyyMMdd') + '-' + (Math.floor(Math.random() * 900) + 100);
+  // shortRef/postMovements in app.js). Without it, each row has no shared
+  // marker to group by, so applyServerMovements() in app.js falls back to
+  // showing its raw internal Movement ID (M0001, M0002, ...) instead of a
+  // proper code -- and it shows as one separate History entry per product
+  // instead of one clean "opening balance" entry for the whole reset. Same
+  // short TYPE-MMDD-XX shape the phone app uses (no year -- see
+  // recentMovementRows above for why that's safe to reuse every year).
+  var resetRef = 'ADJ-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'America/New_York', 'MMdd') + '-' + (Math.floor(Math.random() * 90) + 10);
 
   var values = productsSh.getDataRange().getValues();
   var openingMovements = [];
