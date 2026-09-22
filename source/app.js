@@ -165,6 +165,17 @@ function applyServerStaff(list){
    multi-line History record the app already builds locally — which is what
    makes it possible to show a receiving/sale/adjustment made on ONE device
    in the History list on another, not just its effect on stock counts. */
+// Movement IDs (M0001, M0002, ...) are assigned server-side, one at a time,
+// under a script lock (see maxIdNumber/appendMovements in Code.gs) -- so
+// unlike the Movements sheet's day-only Date column, the numeric part of a
+// row's Movement ID is a single, globally-agreed ordering that every device
+// sees the same way. seqOf() pulls that number back out so History can sort
+// by it instead of by date, which used to leave every movement from the same
+// day in whatever order each device happened to receive them in (new local
+// movements unshifted to the front, synced-in ones pushed to the back, no
+// tiebreaker between two same-day entries) -- the cause of History showing a
+// different order on different phones.
+function seqOf(id){var m=/(\d+)/.exec(id||'');return m?parseInt(m[1],10):null;}
 function applyServerMovements(list){
   if(!list)return;
   var groups={},order=[];
@@ -175,10 +186,19 @@ function applyServerMovements(list){
     if(!groups[num]){groups[num]={rows:[]};order.push(num);}
     groups[num].rows.push(r);
   });
-  var added=false;
   order.forEach(function(num){
-    if(HISTORY.some(function(h){return h.id===num;}))return; // already have it (usually the device that made it)
     var rows=groups[num].rows,first=rows[0];
+    var seq=seqOf(first.id);
+    var existing=null;
+    for(var i=0;i<HISTORY.length;i++){if(HISTORY[i].id===num){existing=HISTORY[i];break;}}
+    if(existing){
+      // Already have it locally (usually the device that made it) -- just
+      // backfill its real sequence number so it sorts correctly relative to
+      // everything else once this device has synced, instead of sitting
+      // wherever it happened to land when it was first created.
+      if(existing.seq==null)existing.seq=seq;
+      return;
+    }
     var type=first.type==='Receiving'?'receipt':first.type==='Customer Stock-Out'?'invoice':
       (first.type==='Stock Count Adjustment'?'adjustment':(first.type==='Void'?'void':'transfer'));
     // 'Stock count' is only the right default for an actual Stock Count
@@ -197,11 +217,23 @@ function applyServerMovements(list){
       return line;
     });
     var notes=(first.notes||'').replace(/^Ref\s+\S+\s*(?:·|\|)?\s*/,'').trim();
-    HISTORY.push({id:num,type:type,cust:custName,date:first.date,time:'',
+    HISTORY.push({id:num,seq:seq,type:type,cust:custName,date:first.date,time:'',
       who:staff?staff.name:(first.staffEmail||''),ref:'',notes:notes,lines:lines});
-    added=true;
   });
-  if(added)HISTORY.sort(function(a,b){return (b.date||'')<(a.date||'')?-1:((b.date||'')>(a.date||'')?1:0);});
+  // Always re-sort, even when nothing new was added -- a backfilled seq
+  // above can change where an existing entry belongs. Only compare by seq
+  // when BOTH sides have one -- that's the one ordering every device will
+  // agree on. Anything still missing a seq (a movement made on this device
+  // moments ago that hasn't round-tripped through a sync yet, or an older
+  // entry the app started with before it ever had a Movement ID attached)
+  // falls back to date+time, which is enough to put "just now" above
+  // everything else without that fallback wrongly outranking real,
+  // seq-ordered history the moment a sync fills seq back in.
+  HISTORY.sort(function(a,b){
+    if(a.seq!=null&&b.seq!=null&&a.seq!==b.seq)return b.seq-a.seq;
+    var ak=(a.date||'')+' '+(a.time||''), bk=(b.date||'')+' '+(b.time||'');
+    return bk<ak?-1:(bk>ak?1:0);
+  });
 }
 
 function syncFromServer(cb){
@@ -343,7 +375,7 @@ function postUpdateStaff(s,cb,onSettle){postAction('updateStaff','staff',s,funct
    product" entry. Receiving is a local, in-progress transaction, so it
    is left alone until the user finishes or navigates away; the product
    list it reads from is still kept current via syncFromServer. */
-var POLL_MS=20000,pollTimer=null;
+var POLL_MS=12000,pollTimer=null;
 var SCREEN_REFRESH={menu:kpis,stock:renderStock,move:renderMove,attn:renderAttn,hist:renderHist,
   adjust:renderAdjust,prices:renderPrices,custs:renderCusts,
   products:renderProducts,staff:renderStaff,logs:renderLogs};
@@ -544,7 +576,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='19', APP_UPDATED='Sep 21, 2026';
+var APP_VERSION='20', APP_UPDATED='Sep 22, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
