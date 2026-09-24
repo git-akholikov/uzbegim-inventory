@@ -35,7 +35,11 @@ function shortRef(prefix){
   return prefix+'-'+mm+dd+'-'+n;
 }
 var basket={},lastMovement=null,lastScreen='menu';
-var ME={name:'Abdu',role:'manager',email:''};
+/* Worker is the safe default until Settings has a Staff email that's been
+   synced and matched against the Staff tab's Role column (see
+   applyServerStaff below) -- a device that's never been configured, or
+   whose sync hasn't run yet, should never show manager-only screens. */
+var ME={name:'Abdu',role:'worker',email:''};
 
 PRODUCTS.forEach(function(p,i){p.barcode=(i%10<7)?('20'+String(480000+i*137).slice(0,7)):'';});
 var OWNER_EMAIL='abduraufkholikov@gmail.com';
@@ -132,9 +136,8 @@ function supplierIdByName(name){var s=findSup(name);return(s&&s.id)?s.id:'';}
    locally-added person who has no email yet. ME.name/ME.email are set from
    whichever synced entry matches the email entered in Settings, for
    "who did this movement" and the "(you)" marker in the Staff list.
-   ME.role is tracked too but is informational only now — which app someone
-   installed (see isManager()/APP_VARIANT) is what actually decides what
-   they can see, not this Sheet column. */
+   ME.role is what actually decides what they can see (see isManager()
+   below) — not which app/link they installed from. */
 function applyServerStaff(list){
   if(!list)return;
   list.forEach(function(s){
@@ -1785,15 +1788,20 @@ document.getElementById('se-save').addEventListener('click',function(){
 
 
 
-/* Manager vs worker is decided by which app someone installed — this file
-   is served from either index.html (worker/default) or manager.html
-   (manager's separate home-screen icon), both built from this exact same
-   source. No PIN, no per-person login: with only a handful of staff, the
-   two links themselves ARE the access control — hand out the manager link
-   only to managers. (An earlier version also gated on the Staff tab's Role
-   column with a PIN fallback; dropped in favor of this simpler model.) */
+/* Manager vs worker is decided by the Staff tab's Role column (via
+   ME.role, synced in applyServerStaff), never by which link/icon someone
+   installed. This file is served from either index.html (worker/default)
+   or manager.html (manager's separate gold-accent home-screen icon), both
+   built from this exact same source -- APP_VARIANT below is cosmetic only
+   now (which icon/splash to show), not a permission signal. A previous
+   version *did* gate manager-only screens on the installed link alone
+   ("hand out the manager link only to managers") -- that broke down
+   because manager.html is a public URL sitting in the repo's own README,
+   so anyone with that link got manager access regardless of their actual
+   Staff Role. Back to gating on Role, no PIN needed since the email in
+   Settings already has to match a real Staff row. */
 var APP_VARIANT=/manager\.html/i.test(location.pathname)?'manager':'worker';
-function isManager(){return APP_VARIANT==='manager';}
+function isManager(){return ME.role==='manager';}
 var toastTimer=null;
 /* type: 'ok' (green — something succeeded/confirmed), 'bad' (red — something
    really failed or was declined), or omitted (neutral dark — a plain notice
