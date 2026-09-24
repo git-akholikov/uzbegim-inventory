@@ -11,12 +11,15 @@
  *   GET  ?               -> current products, live stock, customers, suppliers,
  *                            staff, recent movements, recent change logs
  *   POST {action:...}    -> append movement(s) / add or edit a product,
- *                            customer, supplier or staff member. addStaff
- *                            and updateStaff are manager-only (403 for a
- *                            calling staff whose Role isn't 'manager').
- *                            Every add/edit (except movements, which already
- *                            have their own ledger) writes a row to the Logs
- *                            tab — auto-created on first use.
+ *                            customer, supplier or staff member, or bulk-
+ *                            rename a brand across every product filed under
+ *                            it (renameBrand). addStaff and updateStaff are
+ *                            manager-only (403 for a calling staff whose
+ *                            Role isn't 'manager'); renameBrand is open to
+ *                            any active staff member, same as adding a
+ *                            product. Every add/edit (except movements,
+ *                            which already have their own ledger) writes a
+ *                            row to the Logs tab — auto-created on first use.
  *
  * Auth model: this is a small internal tool for 2-3 known staff, not a
  * public system. Because the web app runs for "Anyone" (no Google sign-in
@@ -96,6 +99,20 @@ function doPost(e) {
       updateProduct(ss, body.product);
       appendLog(ss, staff, 'Edit', 'Product', 'Edited product ' + (body.product && body.product.sku));
       return json({ ok: true, products: readProducts(ss, computeStockMap(ss)) });
+    }
+    if (body.action === 'renameBrand') {
+      // Bulk edit across every product currently filed under one brand name
+      // (a single Brand cell copied onto each of its products, not its own
+      // table) -- open to any active staff member, not manager-only, same
+      // as adding a product. Renaming to a brand name that already exists
+      // elsewhere is allowed and acts as a merge (the frontend confirms
+      // that with the person first).
+      var oldName = String(body.oldName || '').trim();
+      var newName = String(body.newName || '').trim();
+      if (!oldName || !newName) return json({ ok: false, error: 'Both the current and new brand name are required' }, 400);
+      var renamed = renameBrandRows(ss, oldName, newName);
+      if (renamed > 0) appendLog(ss, staff, 'Edit', 'Brand', 'Renamed brand "' + oldName + '" to "' + newName + '" (' + renamed + ' product' + (renamed === 1 ? '' : 's') + ')');
+      return json({ ok: true, count: renamed, products: readProducts(ss, computeStockMap(ss)) });
     }
     if (body.action === 'addCustomer') {
       var custId = appendCustomer(ss, body.customer);
@@ -464,6 +481,22 @@ function updateProduct(ss, p) {
     }
   }
   throw new Error('Product not found: ' + p.sku);
+}
+
+function renameBrandRows(ss, oldName, newName) {
+  var sh = ss.getSheetByName(TAB.products);
+  if (!sh) return 0;
+  var values = sh.getDataRange().getValues();
+  var normOld = oldName.trim().toLowerCase();
+  var count = 0;
+  for (var r = 1; r < values.length; r++) {
+    var v = String(values[r][2] || '').trim(); // column 3 = Brand
+    if (v.toLowerCase() === normOld) {
+      sh.getRange(r + 1, 3).setValue(newName);
+      count++;
+    }
+  }
+  return count;
 }
 
 function appendCustomer(ss, c) {

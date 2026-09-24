@@ -372,6 +372,26 @@ function postAddCustomer(c,cb,onSettle){postAction('addCustomer','customer',c,fu
 function postUpdateCustomer(c,cb,onSettle){postAction('updateCustomer','customer',c,function(res){applyServerCustomers(res.customers);},cb,'Customer update: '+c.name,onSettle);}
 function postAddSupplier(s,cb,onSettle){postAction('addSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb,'New supplier: '+s.name,onSettle);}
 function postUpdateSupplier(s,cb,onSettle){postAction('updateSupplier','supplier',s,function(res){applyServerSuppliers(res.suppliers);},cb,'Supplier update: '+s.name,onSettle);}
+/* Brand rename: a bulk edit across every product under one brand name, so
+   it doesn't fit postAction()'s single-object-payload shape above. Attempted
+   once rather than joining the offline retry queue — this is a deliberate,
+   occasional admin action (with its own confirm() for a merge), not a
+   movement or a single-record edit, so silently replaying it later against
+   whatever the brand list looks like by then is more likely to surprise
+   someone than help them. */
+function postRenameBrand(oldName,newName,cb){
+  if(!sheetsConfigured()){if(cb)cb(false,'not configured');return;}
+  if(!SHEETS_STAFF_EMAIL){if(cb)cb(false,'no staff email');return;}
+  fetch(SHEETS_API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:'renameBrand',staffEmail:SHEETS_STAFF_EMAIL,oldName:oldName,newName:newName})})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if(!res||res.ok===false){if(cb)cb(false,res&&res.error);return;}
+      applyServerProducts(res.products);
+      if(cb)cb(true,null,res);
+    })
+    .catch(function(err){if(cb)cb(false,String(err));});
+}
 function postAddStaff(s,cb,onSettle){postAction('addStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb,'New staff: '+s.name,onSettle);}
 function postUpdateStaff(s,cb,onSettle){postAction('updateStaff','staff',s,function(res){applyServerStaff(res.staff);renderStaff();kpis();},cb,'Staff update: '+s.name,onSettle);}
 
@@ -389,7 +409,8 @@ function postUpdateStaff(s,cb,onSettle){postAction('updateStaff','staff',s,funct
 var POLL_MS=12000,pollTimer=null;
 var SCREEN_REFRESH={menu:kpis,stock:renderStock,move:renderMove,attn:renderAttn,hist:renderHist,
   adjust:renderAdjust,prices:renderPrices,custs:renderCusts,
-  products:renderProducts,staff:renderStaff,logs:renderLogs};
+  products:renderProducts,brands:renderBrands,brandedit:drawBrandProducts,
+  staff:renderStaff,logs:renderLogs};
 function refreshCurrentScreen(){
   kpis();
   // Never rebuild a screen while the user has a form control focused —
@@ -547,7 +568,7 @@ function go(id){
   var all=document.querySelectorAll('.screen');
   for(var i=0;i<all.length;i++)all[i].classList.remove('on');
   document.getElementById('s-'+id).classList.add('on');
-  var t={menu:'Uzbegim Inventory',stock:'Stock',move:'New movement',review:'Review movement',conf:'Confirmed',receive:'Receive stock',attn:'Needs attention',hist:'Movement history',detail:'Movement detail',stats:'Inventory report',scan:'Scan barcode',learn:'Barcode capture',adjust:'Stock count',prices:'Prices and cost',custs:'Customers & suppliers',rreview:'Review delivery',custedit:'Customer details',supedit:'Supplier details',products:'Products',prodedit:'Product details',staff:'Staff',logs:'Activity log',settings:'Settings'};
+  var t={menu:'Uzbegim Inventory',stock:'Stock',move:'New movement',review:'Review movement',conf:'Confirmed',receive:'Receive stock',attn:'Needs attention',hist:'Movement history',detail:'Movement detail',stats:'Inventory report',scan:'Scan barcode',learn:'Barcode capture',adjust:'Stock count',prices:'Prices and cost',custs:'Customers & suppliers',rreview:'Review delivery',custedit:'Customer details',supedit:'Supplier details',products:'Products',prodedit:'Product details',brands:'Brands',brandedit:'Brand details',staff:'Staff',logs:'Activity log',settings:'Settings'};
   document.getElementById('title').textContent=t[id];
   document.getElementById('back').classList.toggle('show',id!=='menu');
   document.getElementById('dock').classList.toggle('on',id==='move');
@@ -563,7 +584,8 @@ document.getElementById('back').addEventListener('click',function(){
   if(lastScreen==='review')go('move');
   else if(lastScreen==='rreview')go('receive');
   else if(lastScreen==='custedit'||lastScreen==='supedit')go('custs');
-  else if(lastScreen==='prodedit')go('products');else if(lastScreen==='detail')go('hist');else go('menu');
+  else if(lastScreen==='prodedit')go('products');else if(lastScreen==='detail')go('hist');
+  else if(lastScreen==='brandedit')go('brands');else go('menu');
 });
 var mb=document.querySelectorAll('[data-go]');
 for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
@@ -574,6 +596,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
   if(d==='prices')renderPrices();
   if(d==='custs')renderCusts();
   if(d==='products')renderProducts();
+  if(d==='brands')renderBrands();
   if(d==='settings')renderSettings();
   if(d==='newprod'){
     go('receive');
@@ -587,7 +610,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='20', APP_UPDATED='Sep 22, 2026';
+var APP_VERSION='23', APP_UPDATED='Sep 24, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -1096,6 +1119,92 @@ document.getElementById('pe-save').addEventListener('click',function(){
   });
   setupFilters('stk'); setupFilters('mv');
   renderProducts(); kpis(); go('products');
+});
+
+/* ══════════ BRANDS (everyone can see and rename; per-product reassignment
+   already lives on the Product edit screen's Brand dropdown) ══════════ */
+var BRANDS_VIEW=[],brandEditName='';
+function renderBrands(){
+  var q=(document.getElementById('br-q').value||'').toLowerCase().trim();
+  var byBrand={};
+  PRODUCTS.forEach(function(p){
+    var b=p.brand||'(no brand)';
+    if(!byBrand[b])byBrand[b]={name:b,count:0,boxes:0};
+    byBrand[b].count++; byBrand[b].boxes+=(p.boxes||0);
+  });
+  BRANDS_VIEW=Object.keys(byBrand).map(function(k){return byBrand[k];})
+    .sort(function(a,b){var an=a.name.toLowerCase(),bn=b.name.toLowerCase();return an<bn?-1:(an>bn?1:0);});
+  var shown=BRANDS_VIEW.map(function(b,i){return{b:b,i:i};})
+    .filter(function(x){return !q||x.b.name.toLowerCase().indexOf(q)>=0;});
+  document.getElementById('br-count').textContent=shown.length+' of '+BRANDS_VIEW.length+' brands';
+  document.getElementById('br-list').innerHTML=shown.length?shown.map(function(x){
+    var b=x.b;
+    return '<div class="card" data-i="'+x.i+'" style="cursor:pointer">'+
+      '<div class="c-info"><div class="c-name">'+b.name+'</div>'+
+      '<div class="c-meta">'+b.count+' product'+(b.count===1?'':'s')+'</div></div>'+
+      '<div class="c-box">'+b.boxes+'<small>BOXES</small></div></div>';
+  }).join(''):'<div class="empty">No brands match</div>';
+}
+document.getElementById('br-q').addEventListener('input',renderBrands);
+(function(){
+  var el=document.getElementById('br-list'); if(!el)return;
+  el.addEventListener('click',function(ev){
+    var c=ev.target.closest?ev.target.closest('.card'):null;
+    if(!c)return;
+    var i=parseInt(c.getAttribute('data-i'),10);
+    if(BRANDS_VIEW[i])openBrand(BRANDS_VIEW[i].name);
+  });
+})();
+function openBrand(name){
+  brandEditName=name;
+  document.getElementById('be-name').value=name;
+  drawBrandProducts();
+  go('brandedit');
+}
+function drawBrandProducts(){
+  if(!brandEditName)return;
+  var rows=PRODUCTS.map(function(p,i){return{p:p,i:i};})
+    .filter(function(x){return (x.p.brand||'(no brand)')===brandEditName;})
+    .sort(function(a,b){return byProductName(a.p,b.p);});
+  document.getElementById('be-count').textContent=rows.length+' product'+(rows.length===1?'':'s')+' under this brand';
+  document.getElementById('be-list').innerHTML=rows.length?rows.map(function(x){
+    var p=x.p;
+    return '<div class="card prod" data-i="'+x.i+'" style="cursor:pointer">'+
+      icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div>'+
+      '<div class="c-meta">'+p.sku+' &middot; '+p.upb+' '+p.unit+'/box</div></div>'+
+      '<div class="c-box">'+p.boxes+'<small>BOXES</small></div></div>';
+  }).join(''):'<div class="empty">No products under this brand</div>';
+}
+(function(){
+  var el=document.getElementById('be-list'); if(!el)return;
+  el.addEventListener('click',function(ev){
+    var c=ev.target.closest?ev.target.closest('.prod'):null;
+    if(c)openProd(parseInt(c.getAttribute('data-i'),10));
+  });
+})();
+document.getElementById('be-cancel').addEventListener('click',function(){go('brands')});
+document.getElementById('be-save').addEventListener('click',function(){
+  var newName=document.getElementById('be-name').value.trim();
+  if(!newName){toast('Brand name is required');document.getElementById('be-name').focus();return;}
+  if(newName===brandEditName){toast('No change to save');return;}
+  var clash=uniq(PRODUCTS.map(function(p){return p.brand;}))
+    .some(function(b){return b.toLowerCase()===newName.toLowerCase()&&b!==brandEditName;});
+  var doIt=function(){
+    if(!sheetsConfigured()){toast('Add the Sheets link in Settings first','bad');return;}
+    if(!SHEETS_STAFF_EMAIL){toast('Add your email in Settings first','bad');return;}
+    var oldName=brandEditName;
+    document.getElementById('be-save').disabled=true;
+    postRenameBrand(oldName,newName,function(ok,err){
+      document.getElementById('be-save').disabled=false;
+      if(!ok){toast('Could not save — '+(err||'try again'),'bad');return;}
+      toast('Renamed to '+newName,'ok');
+      brandEditName=newName;
+      renderBrands(); drawBrandProducts(); kpis();
+    });
+  };
+  if(clash){
+    if(confirm('"'+newName+'" already exists as a brand. Merge "'+brandEditName+'" into it?'))doIt();
+  }else doIt();
 });
 
 /* ══════════ MANAGER: STAFF ══════════ */
