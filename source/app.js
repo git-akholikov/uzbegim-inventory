@@ -696,12 +696,25 @@ function refreshBrands(p){
   sel.value=(brands.indexOf(was)>-1)?was:'';
   drawCatBar(p);
 }
+/* Every product-browsing screen (Stock, Movement, Receive, Products, Adjust,
+   Prices, barcode capture) used to list products in whatever order they sit
+   in the PRODUCTS array -- effectively "whenever it was added", so freshly
+   added items landed wherever the sheet happened to put them instead of
+   next to their category/brand. Nobody picks a sort here; browsing screens
+   just sort A-Z by product name once, same rule everywhere. Screens that
+   have their own deliberate order (Needs Attention = most urgent first,
+   Movement History = newest first, report leaderboards = highest first)
+   are untouched -- this is only for the "find a product" screens. */
+function byProductName(a,b){
+  var an=(a.name||'').toLowerCase(),bn=(b.name||'').toLowerCase();
+  return an<bn?-1:(an>bn?1:0);
+}
 function filterProducts(p){
   var q=document.getElementById(p+'-q').value.toLowerCase().trim();
   var c=document.getElementById(p+'-cat').value,b=document.getElementById(p+'-brand').value,s=document.getElementById(p+'-status').value;
   return PRODUCTS.filter(function(x){
     if(q&&(x.name||'').toLowerCase().indexOf(q)<0&&x.sku.toLowerCase().indexOf(q)<0&&(x.brand||'').toLowerCase().indexOf(q)<0)return false;
-    if(c&&x.cat!==c)return false;if(b&&x.brand!==b)return false;if(s&&statusOf(x)!==s)return false;return true;});
+    if(c&&x.cat!==c)return false;if(b&&x.brand!==b)return false;if(s&&statusOf(x)!==s)return false;return true;}).sort(byProductName);
 }
 
 /* ════════════ Days of supply: adaptive-window outbound rate ════════════
@@ -972,7 +985,7 @@ function drawProducts(){
     if(br&&p.brand!==br)return false;
     if(only==='nomin'&&p.min)return false;
     if(only==='nobar'&&p.barcode)return false;
-    return true;});
+    return true;}).sort(function(a,b){return byProductName(a.p,b.p);});
   document.getElementById('pd-count').textContent=r.length+' of '+PRODUCTS.length+' products';
   document.getElementById('pd-list').innerHTML=r.length?r.map(function(x){
     var p=x.p;
@@ -1267,7 +1280,7 @@ function drawAdjust(){
   var cat=document.getElementById('aj-cat').value, br=document.getElementById('aj-brand').value;
   var r=PRODUCTS.filter(function(p){
     if(q&&(p.name||'').toLowerCase().indexOf(q)<0&&p.sku.toLowerCase().indexOf(q)<0&&(p.brand||'').toLowerCase().indexOf(q)<0)return false;
-    if(cat&&p.cat!==cat)return false; if(br&&p.brand!==br)return false; return true;});
+    if(cat&&p.cat!==cat)return false; if(br&&p.brand!==br)return false; return true;}).sort(byProductName);
   document.getElementById('aj-count').textContent=r.length+' of '+PRODUCTS.length+' products';
   document.getElementById('aj-list').innerHTML=r.map(function(p){
     var c=counts[p.sku];
@@ -1445,7 +1458,7 @@ function drawPrices(){
       var pp=effPrice(cust,p);
       if(!pp||100*(pp-(p.cost||0))/pp>=15)return false;
     }
-    return true;});
+    return true;}).sort(byProductName);
 
   document.getElementById('pr-count').textContent=
     r.length+' of '+PRODUCTS.length+(cust?(' \u00b7 '+cust):' \u00b7 standard prices');
@@ -1983,6 +1996,7 @@ function renderHist(){
     refreshHistoryProducts();
   }
   refreshParties();
+  histPageNum=0;
   drawHist();
 }
 function refreshHistoryProducts(){
@@ -2090,17 +2104,45 @@ function voidMovement(id){
   kpis();
   detail(num);
 }
+/* History used to hard-cap at the 60 most recent matching rows with no way
+   to see past them -- fine back when there were a few dozen movements total,
+   silently useless once the warehouse recount pushed the sheet past 500.
+   Now it's paged: 60 rows per page with Prev/Next, instead of dumping every
+   matching row into the DOM at once (this list is rendered on phones). */
+var HIST_PAGE_SIZE=60, histPageNum=0;
 function drawHist(){
   var r=histRows();
   var view=document.getElementById('hs-view').value;
   document.getElementById('hs-list').className='list '+(view==='doc'?'history-doc':'history-grouped');
-  document.getElementById('hs-count').textContent=r.length+' of '+HISTORY.length+' movements';
-  if(view!=='doc'){drawGrouped(r,view);return;}
-  document.getElementById('hs-list').innerHTML=r.length?r.slice(0,60).map(function(h){
+  if(view!=='doc'){
+    document.getElementById('hs-count').textContent=r.length+' of '+HISTORY.length+' movements';
+    drawGrouped(r,view);return;
+  }
+  var totalPages=Math.max(1,Math.ceil(r.length/HIST_PAGE_SIZE));
+  if(histPageNum>totalPages-1)histPageNum=totalPages-1;
+  if(histPageNum<0)histPageNum=0;
+  var start=histPageNum*HIST_PAGE_SIZE;
+  var pageRows=r.slice(start,start+HIST_PAGE_SIZE);
+  var countText=r.length?((start+1)+'-'+(start+pageRows.length)+' of '+r.length):'0 of '+r.length;
+  countText+=r.length!==HISTORY.length?(' matching ('+HISTORY.length+' total)'):' movements';
+  document.getElementById('hs-count').textContent=countText;
+  var rowsHtml=pageRows.map(function(h){
     var bx=0;for(var i=0;i<h.lines.length;i++)bx+=h.lines[i].boxes;
     var kind=movementKind(h.type);
     return '<div class="hitem hi-'+h.type+'" onclick="detail(\''+h.id+'\')"><div class="h-top"><span class="h-id">'+movementId(h.id)+'</span><span class="h-tag t-'+h.type+'">'+kind+'</span>'+(h._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+(voidedByEntry(h.id)?' <span class="void-badge">VOIDED</span>':'')+'</div><div class="h-meta">'+h.cust+' &middot; '+nice(h.date)+' '+h.time+' &middot; '+h.who+'</div><div class="h-meta" style="margin-top:3px;color:#0F5C5C;font-weight:700">'+bx+' boxes &middot; '+h.lines.length+' products</div></div>';
-  }).join(''):'<div class="empty">No movements match these filters</div>';
+  }).join('');
+  var pagerHtml=(totalPages>1)?('<div class="hist-pager" style="display:flex;align-items:center;gap:8px;margin-top:12px">'+
+    '<button class="btn ghost" style="width:auto;flex:1;margin-top:0" onclick="histGoPage(-1)"'+(histPageNum<=0?' disabled':'')+'>&larr; Prev</button>'+
+    '<span style="font-size:11px;font-weight:700;color:#6f6b64;white-space:nowrap">Page '+(histPageNum+1)+' of '+totalPages+'</span>'+
+    '<button class="btn ghost" style="width:auto;flex:1;margin-top:0" onclick="histGoPage(1)"'+(histPageNum>=totalPages-1?' disabled':'')+'>Next &rarr;</button>'+
+    '</div>'):'';
+  document.getElementById('hs-list').innerHTML=r.length?(rowsHtml+pagerHtml):'<div class="empty">No movements match these filters</div>';
+}
+function histGoPage(delta){
+  histPageNum+=delta;
+  drawHist();
+  var body=document.getElementById('body');
+  if(body)body.scrollTop=0;
 }
 function drawGrouped(rows,view){
   var prod2cat={};PRODUCTS.forEach(function(p){prod2cat[p.name]=p.cat;});
@@ -2150,7 +2192,7 @@ function drawGrouped(rows,view){
 }
 ['hs-q','hs-type','hs-cust','hs-from','hs-to','hs-product','hs-brand'].forEach(function(id){
   var e=document.getElementById(id);
-  var fn=function(){ if(id==='hs-type')refreshParties();if(id==='hs-brand')refreshHistoryProducts();drawHist(); };
+  var fn=function(){ if(id==='hs-type')refreshParties();if(id==='hs-brand')refreshHistoryProducts();histPageNum=0;drawHist(); };
   e.addEventListener('input',fn); e.addEventListener('change',fn);
 });
 
@@ -2215,7 +2257,7 @@ function drawReceive(){
   }
   var matches=PRODUCTS.filter(function(p){
     return (p.name||'').toLowerCase().indexOf(q)>=0||p.sku.toLowerCase().indexOf(q)>=0||(p.brand||'').toLowerCase().indexOf(q)>=0;
-  });
+  }).sort(byProductName);
   document.getElementById('rc-count').textContent=matches.length?(matches.length+' match'+(matches.length===1?'':'es')):'No existing product matches';
   var html=matches.map(function(p){
     var inb=rbasket[p.sku]?rbasket[p.sku].qty:0;
@@ -2571,7 +2613,7 @@ function drawLearn(){
   var onlyMissing=fEl?fEl.value==='missing':false;
   var r=PRODUCTS.filter(function(p){
     if(onlyMissing&&p.barcode)return false;
-    return!q||(p.name||'').toLowerCase().indexOf(q)>=0||p.sku.toLowerCase().indexOf(q)>=0;});
+    return!q||(p.name||'').toLowerCase().indexOf(q)>=0||p.sku.toLowerCase().indexOf(q)>=0;}).sort(byProductName);
   document.getElementById('ln-list').innerHTML=r.slice(0,40).map(function(p){
     return '<div class="card" onclick="attachCode(\''+p.sku+'\')"><div class="c-info"><div class="c-name">'+p.name+'</div>'+
     '<div class="c-meta">'+p.sku+' &middot; '+(p.barcode?('code '+p.barcode):'no barcode yet')+'</div></div>'+
