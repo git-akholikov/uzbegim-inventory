@@ -1417,7 +1417,15 @@ function applyServerMovements(list){
 
 function syncFromServer(cb){
   if(!sheetsConfigured()){if(cb)cb(false,'not configured');return;}
-  fetch(SHEETS_API_URL).then(function(r){return r.json();}).then(function(res){
+  // Sends the configured staff email as a query param so the backend can
+  // tell a manager from a worker on the READ side too (writes already send
+  // it in the POST body) and redact manager-only fields (Staff role, Logs)
+  // for anyone who isn't one -- see Code.gs doGet(). Safe to send even
+  // before Settings has a staff email filled in yet: an empty/unmatched
+  // email just means the server treats the caller as a non-manager, same
+  // as any other unrecognized device.
+  var syncUrl=SHEETS_API_URL+(SHEETS_API_URL.indexOf('?')>=0?'&':'?')+'staffEmail='+encodeURIComponent(SHEETS_STAFF_EMAIL||'');
+  fetch(syncUrl).then(function(r){return r.json();}).then(function(res){
     if(!res||res.ok===false){lastSyncOk=false;lastSyncErr=(res&&res.error)||'sync failed';if(cb)cb(false,lastSyncErr);return;}
     applyServerProducts(res.products);
     applyServerCustomers(res.customers);

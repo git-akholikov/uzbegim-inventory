@@ -40,14 +40,32 @@ function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var stockBySku = computeStockMap(ss);
+
+    // Read-side auth: the app runs for "Anyone" with no Google sign-in
+    // prompt, so this was previously handing back everything -- including
+    // every staff member's Role and the full manager-only change Logs -- to
+    // whoever hit the URL. Writes were already checked against the Staff
+    // tab (see doPost); reads now are too. The frontend sends the caller's
+    // configured email as ?staffEmail=... (added alongside every sync).
+    // Email + name still go to EVERY caller regardless of role: Movement
+    // History resolves each entry's "who" by matching Staff email->name for
+    // every device, including workers, so that list can't be hidden -- only
+    // the Role field (and the Logs tab entirely) are manager-only.
+    var caller = findActiveStaff(ss, e && e.parameter && e.parameter.staffEmail);
+    var callerIsManager = !!caller && isManagerRole(caller['Role']);
+    var staffList = readStaffList(ss);
+    if (!callerIsManager) {
+      staffList = staffList.map(function (s) { return { email: s.email, name: s.name, active: s.active }; });
+    }
+
     var payload = {
       ok: true,
       products: readProducts(ss, stockBySku),
       customers: readCustomers(ss),
       suppliers: readSuppliers(ss),
       movements: readMovements(ss),
-      staff: readStaffList(ss),
-      logs: readLogs(ss),
+      staff: staffList,
+      logs: callerIsManager ? readLogs(ss) : [],
       generatedAt: new Date().toISOString()
     };
     return json(payload);
