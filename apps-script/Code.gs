@@ -195,11 +195,21 @@ function readProducts(ss, stockBySku) {
   return readTable(ss, TAB.products)
     .filter(function (r) { return r['Product ID'] && r['Active (Y/N)'] === 'Y'; })
     .map(function (r) {
-      var flavor = r['Flavor / Variant'] ? (' - ' + r['Flavor / Variant']) : '';
+      var flavor = r['Flavor / Variant'] || '';
       return {
         sku: r['Product ID'],
         brand: r['Brand'] || r['Product Name'],
-        name: (r['Product Name'] || '') + flavor,
+        // "product" is the Product Name column on its own -- Brand, Product
+        // and Flavor/Variant are three separate columns on the sheet and
+        // always have been (the Add/Edit Product screen already asks for
+        // them separately), but until now this endpoint only ever sent
+        // back the combined display string below, so nothing on the
+        // client could filter or group by "product" without also slicing
+        // by flavor. A brand with only one product (most of them) just
+        // has Product Name === Brand, same as anywhere else in the app.
+        product: r['Product Name'] || r['Brand'] || '',
+        flavor: flavor,
+        name: (r['Product Name'] || '') + (flavor ? (' - ' + flavor) : ''),
         cat: r['Category'] || '',
         unit: r['Unit'] || '',
         upb: Number(r['Units per Box']) || 1,

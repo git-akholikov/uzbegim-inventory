@@ -98,7 +98,7 @@ function applyServerProducts(list){
   list.forEach(function(sp){
     var existing=bySku[sp.sku];
     if(existing){
-      existing.brand=sp.brand;existing.name=sp.name;existing.cat=sp.cat;existing.unit=sp.unit;
+      existing.brand=sp.brand;existing.product=sp.product;existing.flavor=sp.flavor;existing.name=sp.name;existing.cat=sp.cat;existing.unit=sp.unit;
       existing.upb=sp.upb;existing.min=sp.min;existing.boxes=sp.boxes;
       delete bySku[sp.sku];
     } else {
@@ -610,7 +610,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='26', APP_UPDATED='Sep 26, 2026';
+var APP_VERSION='27', APP_UPDATED='Sep 26, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -745,7 +745,12 @@ function refreshProductsFilter(p){
   var pool=PRODUCTS;
   if(cat)pool=pool.filter(function(x){return x.cat===cat;});
   if(brand)pool=pool.filter(function(x){return x.brand===brand;});
-  var names=uniq(pool.map(function(x){return x.name;}));
+  // The actual *product* (e.g. "Khonqa 15lb", or just "Moxito" for a brand
+  // that only has the one product) -- not x.name, which is the product
+  // plus its flavor/size baked together and would list every flavor as if
+  // it were its own product. A brand with a single product has Product
+  // Name === Brand, so falling back to x.brand is the right default there.
+  var names=uniq(pool.map(function(x){return x.product||x.brand;}));
   fill(sel,names,'All products');
   sel.value=(names.indexOf(was)>-1)?was:'';
 }
@@ -769,7 +774,7 @@ function filterProducts(p){
   var sSel=document.getElementById(p+'-status'),s=sSel?sSel.value:'';
   return PRODUCTS.filter(function(x){
     if(q&&(x.name||'').toLowerCase().indexOf(q)<0&&x.sku.toLowerCase().indexOf(q)<0&&(x.brand||'').toLowerCase().indexOf(q)<0)return false;
-    if(c&&x.cat!==c)return false;if(b&&x.brand!==b)return false;if(pr&&x.name!==pr)return false;if(s&&statusOf(x)!==s)return false;return true;}).sort(byProductName);
+    if(c&&x.cat!==c)return false;if(b&&x.brand!==b)return false;if(pr&&(x.product||x.brand)!==pr)return false;if(s&&statusOf(x)!==s)return false;return true;}).sort(byProductName);
 }
 
 /* ════════════ Days of supply: adaptive-window outbound rate ════════════
@@ -2226,7 +2231,10 @@ function refreshHistoryProducts(){
   var brand=document.getElementById('hs-brand').value;
   var sel=document.getElementById('hs-product'),was=sel.value;
   var pool=brand?PRODUCTS.filter(function(p){return p.brand===brand}):PRODUCTS;
-  var names=uniq(pool.map(function(p){return p.name}));
+  // Same fix as the Stock/Movement product filter: group by the actual
+  // product, not by p.name (which has the flavor/size baked in and would
+  // list every flavor separately).
+  var names=uniq(pool.map(function(p){return p.product||p.brand}));
   fill(sel,names,brand?('All '+brand+' products'):'All products');
   sel.value=names.indexOf(was)>-1?was:'';
 }
@@ -2252,7 +2260,13 @@ function histRows(){
     if(productName||brand){
       var matches=h.lines.some(function(l){
         var p=prod(l.sku),lineBrand=l.brand||((p&&p.brand)||'');
-        return (!productName||l.name===productName)&&(!brand||lineBrand===brand);
+        // Movement lines only ever snapshotted name/brand, never a separate
+        // product -- there's no historical drift to worry about here (a
+        // SKU's product/brand split doesn't change after the fact the way
+        // its brand occasionally gets renamed), so this always looks up
+        // today's product for that SKU.
+        var lineProduct=(p&&(p.product||p.brand))||'';
+        return (!productName||lineProduct===productName)&&(!brand||lineBrand===brand);
       });
       if(!matches)return false;
     }
