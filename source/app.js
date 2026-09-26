@@ -610,7 +610,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='27', APP_UPDATED='Sep 26, 2026';
+var APP_VERSION='28', APP_UPDATED='Sep 26, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -670,6 +670,12 @@ function kpis(){
   if(st&&typeof STAFF!=='undefined')st.textContent=STAFF.length+' people';
   var cu=document.getElementById('hi-cu');
   if(cu)cu.textContent=CUSTOMERS.length+' customers · '+SUPPLIERS.length+' suppliers';
+  // The menu greeting's name used to be plain text baked into the page
+  // ("Abdu"), never updated -- so every phone showed "Abdu" next to
+  // whatever role badge below actually matched who was signed in, which
+  // read as "Abdu ... Worker" even on a different staff member's phone.
+  var nm=document.getElementById('hi-name');
+  if(nm)nm.textContent=(ME&&ME.name)||'Abdu';
   var role=document.getElementById('hi-role');
   if(role){
     var mgr=isManager();
@@ -2879,5 +2885,5 @@ document.addEventListener('keydown',function(e){
 setupFilters('stk');setupFilters('mv');
 wireCatBar('stk',renderStock);wireCatBar('mv',renderMove);
 kpis();drawBasket();
-if(sheetsConfigured())syncFromServer(function(ok,err){if(!ok)toast('Sheets sync failed — showing last-known stock','bad');});
+if(sheetsConfigured())syncFromServer(function(ok,err){if(ok)kpis();else toast('Sheets sync failed — showing last-known stock','bad');});
 startPolling();
