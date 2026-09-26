@@ -1419,6 +1419,16 @@ function applyServerMovements(list){
       // everything else once this device has synced, instead of sitting
       // wherever it happened to land when it was first created.
       if(existing.seq==null)existing.seq=seq;
+      // Also re-resolve "who" from the server's staffEmail for this
+      // movement, the same way a movement synced in from another device
+      // already does below. Without this, a movement whose local "who"
+      // was ever wrong at the moment it was created (a bug, or a stale
+      // signed-in identity on that phone) stays wrong for the rest of
+      // that browser session even once the phone is fully synced and
+      // correctly signed in -- this device never rechecks it again
+      // otherwise.
+      var s=STAFF.filter(function(x){return x.email===first.staffEmail;})[0];
+      if(s)existing.who=s.name;
       return;
     }
     var type=first.type==='Receiving'?'receipt':first.type==='Customer Stock-Out'?'invoice':
@@ -1829,7 +1839,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='28', APP_UPDATED='Sep 26, 2026';
+var APP_VERSION='29', APP_UPDATED='Sep 26, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -3356,7 +3366,12 @@ document.getElementById('rv-go').addEventListener('click',function(){
     return{sku:it.sku,name:it.name,boxes:it.qty,upb:it.upb,price:0,cost:0,cat:it.cat,brand:it.brand};});
   var d=new Date();
   var num=shortRef(c.kind==='transfer'?'MOV':'OUT');
-  var rec={id:num,type:c.kind,cust:c.name,date:TODAY,time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),who:'Abdu',ref:'',notes:document.getElementById('rv-notes').value,lines:lines};
+  // Every other movement-confirm handler (Receive, Stock Count, Void)
+  // stamps who did it from ME.name -- this one was left hardcoded to
+  // 'Abdu', so a stock-out or transfer made on a worker's own phone
+  // always showed as though Abdu had done it, no matter who was
+  // actually signed in.
+  var rec={id:num,type:c.kind,cust:c.name,date:TODAY,time:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2),who:(ME&&ME.name)?ME.name:'Abdu',ref:'',notes:document.getElementById('rv-notes').value,lines:lines};
   HISTORY.unshift(rec);lastMovement=rec;
   for(var j=0;j<a.length;j++)prod(a[j].sku).boxes-=a[j].qty;
   postMovements(c.kind==='transfer'?'Internal Transfer':'Customer Stock-Out',lines,
