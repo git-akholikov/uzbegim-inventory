@@ -610,7 +610,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='24', APP_UPDATED='Sep 26, 2026';
+var APP_VERSION='25', APP_UPDATED='Sep 26, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -688,7 +688,10 @@ function kpis(){
 }
 function setupFilters(p){
   fill(document.getElementById(p+'-cat'),uniq(PRODUCTS.map(function(x){return x.cat})),'All categories');
-  document.getElementById(p+'-status').innerHTML='<option value="">All status</option><option value="OK">OK</option><option value="LOW">Low</option><option value="ORDER">Order now</option><option value="OUT">Out of stock</option><option value="SETMIN">Set min</option>';
+  // Movement has no status select (see mv-*'s listener below) -- picking
+  // what to send out doesn't need a stock-health filter the way Stock does.
+  var st=document.getElementById(p+'-status');
+  if(st)st.innerHTML='<option value="">All status</option><option value="OK">OK</option><option value="LOW">Low</option><option value="ORDER">Order now</option><option value="OUT">Out of stock</option><option value="SETMIN">Set min</option>';
   refreshBrands(p);
 }
 /* Brand list shows only brands that exist inside the chosen category. */
@@ -729,6 +732,22 @@ function refreshBrands(p){
   fill(sel,brands,cat?('All '+cat.toLowerCase()+' brands'):'All brands');
   sel.value=(brands.indexOf(was)>-1)?was:'';
   drawCatBar(p);
+  refreshProductsFilter(p);
+}
+/* Product list (Stock, Movement) narrows with whichever of Category/Brand
+   are already picked -- same cascade Brand already does off Category. A
+   screen with no p+'-product' select (Prices, Products, Adjust, which each
+   have their own filter wiring) just no-ops here. */
+function refreshProductsFilter(p){
+  var sel=document.getElementById(p+'-product'); if(!sel)return;
+  var cat=document.getElementById(p+'-cat').value, brand=document.getElementById(p+'-brand').value;
+  var was=sel.value;
+  var pool=PRODUCTS;
+  if(cat)pool=pool.filter(function(x){return x.cat===cat;});
+  if(brand)pool=pool.filter(function(x){return x.brand===brand;});
+  var names=uniq(pool.map(function(x){return x.name;}));
+  fill(sel,names,'All products');
+  sel.value=(names.indexOf(was)>-1)?was:'';
 }
 /* Every product-browsing screen (Stock, Movement, Receive, Products, Adjust,
    Prices, barcode capture) used to list products in whatever order they sit
@@ -745,10 +764,12 @@ function byProductName(a,b){
 }
 function filterProducts(p){
   var q=document.getElementById(p+'-q').value.toLowerCase().trim();
-  var c=document.getElementById(p+'-cat').value,b=document.getElementById(p+'-brand').value,s=document.getElementById(p+'-status').value;
+  var c=document.getElementById(p+'-cat').value,b=document.getElementById(p+'-brand').value;
+  var prSel=document.getElementById(p+'-product'),pr=prSel?prSel.value:'';
+  var sSel=document.getElementById(p+'-status'),s=sSel?sSel.value:'';
   return PRODUCTS.filter(function(x){
     if(q&&(x.name||'').toLowerCase().indexOf(q)<0&&x.sku.toLowerCase().indexOf(q)<0&&(x.brand||'').toLowerCase().indexOf(q)<0)return false;
-    if(c&&x.cat!==c)return false;if(b&&x.brand!==b)return false;if(s&&statusOf(x)!==s)return false;return true;}).sort(byProductName);
+    if(c&&x.cat!==c)return false;if(b&&x.brand!==b)return false;if(pr&&x.name!==pr)return false;if(s&&statusOf(x)!==s)return false;return true;}).sort(byProductName);
 }
 
 /* ════════════ Days of supply: adaptive-window outbound rate ════════════
@@ -779,17 +800,30 @@ function dosLabel(p){
   if(d>180)return '180+ days left';
   return '~'+Math.round(d)+' day'+(Math.round(d)===1?'':'s')+' left';
 }
+/* "How much of this actually moved out recently" -- reuses the same
+   outbound-only (non-receipt) window math daysOfSupply() already relies
+   on, just reported directly as box counts for 7 and 30 days instead of
+   being turned into a days-left estimate. Shown on every Stock card so you
+   can see what's selling without opening the Inventory report. */
+function outMoveLabel(p){
+  var out7=outboundInWindow(p.sku,7).qty, out30=outboundInWindow(p.sku,30).qty;
+  return 'Out 7d: <b>'+out7+'</b> boxes &middot; 30d: <b>'+out30+'</b> boxes';
+}
 
 function renderStock(){
   var r=filterProducts('stk');
   document.getElementById('stk-count').textContent=r.length+' of '+PRODUCTS.length+' products';
   document.getElementById('stk-list').innerHTML=r.length?r.map(function(p){var s=statusOf(p);
-    return '<div class="card'+(s==='OUT'?' dead':(s==='ORDER'?' hot':''))+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+(p._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div><div class="c-meta">'+p.sku+' &middot; '+p.cat+' &middot; '+p.upb+' '+p.unit+'/box</div><div style="margin-top:6px"><span class="pill s-'+s+'">'+label(s)+'</span></div><div class="c-meta" style="margin-top:4px">'+dosLabel(p)+'</div></div><div class="c-box">'+p.boxes+'<small>BOXES</small></div></div>';
+    return '<div class="card'+(s==='OUT'?' dead':(s==='ORDER'?' hot':''))+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+(p._pending?' <span class="pend-badge">NOT SYNCED</span>':'')+'</div><div class="c-meta">'+p.sku+' &middot; '+p.cat+' &middot; '+p.upb+' '+p.unit+'/box</div><div style="margin-top:6px"><span class="pill s-'+s+'">'+label(s)+'</span></div><div class="c-meta" style="margin-top:4px">'+dosLabel(p)+'</div><div class="c-meta">'+outMoveLabel(p)+'</div></div><div class="c-box">'+p.boxes+'<small>BOXES</small></div></div>';
   }).join(''):'<div class="empty">No products match these filters</div>';
 }
-['stk-q','stk-cat','stk-brand','stk-status'].forEach(function(id){
+['stk-q','stk-cat','stk-brand','stk-product','stk-status'].forEach(function(id){
   var e=document.getElementById(id);
-  var fn=function(){ if(id==='stk-cat'){refreshBrands('stk');drawCatBar('stk');} renderStock(); };
+  var fn=function(){
+    if(id==='stk-cat'){refreshBrands('stk');drawCatBar('stk');}
+    else if(id==='stk-brand'){refreshProductsFilter('stk');}
+    renderStock();
+  };
   e.addEventListener('input',fn); e.addEventListener('change',fn);
 });
 
@@ -802,9 +836,13 @@ function renderMove(){
   }).join(''):'<div class="empty">No products match these filters</div>';
   drawBasket();
 }
-['mv-q','mv-cat','mv-brand','mv-status'].forEach(function(id){
+['mv-q','mv-cat','mv-brand','mv-product'].forEach(function(id){
   var e=document.getElementById(id);
-  var fn=function(){ if(id==='mv-cat'){refreshBrands('mv');drawCatBar('mv');} renderMove(); };
+  var fn=function(){
+    if(id==='mv-cat'){refreshBrands('mv');drawCatBar('mv');}
+    else if(id==='mv-brand'){refreshProductsFilter('mv');}
+    renderMove();
+  };
   e.addEventListener('input',fn); e.addEventListener('change',fn);
 });
 
@@ -911,7 +949,7 @@ document.getElementById('np-add').addEventListener('click',function(){
   ['np-name','np-flavor','np-upb','np-cost','np-price','np-min','np-boxes'].forEach(function(id){
     document.getElementById(id).value='';
   });
-  ['stk-cat','stk-brand','mv-cat','mv-brand','pr-cat','pr-brand','aj-cat','aj-brand'].forEach(function(id){
+  ['stk-cat','stk-brand','stk-product','mv-cat','mv-brand','mv-product','pr-cat','pr-brand','aj-cat','aj-brand'].forEach(function(id){
     var e=document.getElementById(id); if(e)e.innerHTML='';
   });
   setupFilters('stk'); setupFilters('mv');
@@ -1114,8 +1152,8 @@ document.getElementById('pe-save').addEventListener('click',function(){
       function(ok){rec._pending=!ok;refreshCurrentScreen();});
   }
   ['stk','mv','pd','pr','aj'].forEach(function(pfx){
-    var c=document.getElementById(pfx+'-cat'),b=document.getElementById(pfx+'-brand');
-    if(c)c.innerHTML=''; if(b)b.innerHTML='';
+    var c=document.getElementById(pfx+'-cat'),b=document.getElementById(pfx+'-brand'),pr=document.getElementById(pfx+'-product');
+    if(c)c.innerHTML=''; if(b)b.innerHTML=''; if(pr)pr.innerHTML='';
   });
   setupFilters('stk'); setupFilters('mv');
   renderProducts(); kpis(); go('products');
@@ -1407,11 +1445,12 @@ function drawAdjust(){
     var diff=(c===undefined||c===null||c==='')?null:(Number(c)-p.boxes);
     var showDiff=diff!==null&&diff!==0;
     return '<div class="card" data-sku="'+p.sku+'">'+icoCat(p.cat)+'<div class="c-info"><div class="c-name">'+p.name+'</div>'+
-    '<div class="c-meta">'+p.sku+' &middot; system says <b>'+p.boxes+'</b> boxes</div>'+
+    '<div class="c-meta">'+p.sku+'</div>'+
     '<div class="c-meta diffline" style="'+(showDiff?('color:'+(diff<0?'#B4443F':'#26603a')+';font-weight:800'):'display:none')+'">'+
       (showDiff?((diff>0?'+':'')+diff+' box'+(Math.abs(diff)===1?'':'es')+' '+(diff<0?'missing':'extra')):'')+'</div>'+
-    '</div><div class="qty"><input type="number" inputmode="numeric" placeholder="count" value="'+(c===undefined?'':c)+'" '+
-    'style="width:62px" enterkeyhint="done" onfocus="this.select()" onkeydown="if(event.key===&quot;Enter&quot;){event.preventDefault();this.blur();}" '+
+    '</div><div class="c-box">'+p.boxes+'<small>ON HAND</small></div>'+
+    '<div class="qty"><input type="number" inputmode="numeric" placeholder="count" value="'+(c===undefined?'':c)+'" '+
+    'style="width:52px" enterkeyhint="done" onfocus="this.select()" onkeydown="if(event.key===&quot;Enter&quot;){event.preventDefault();this.blur();}" '+
     'oninput="setCount(\''+p.sku+'\',this.value)"></div></div>';
   }).join('')||'<div class="empty">No products match</div>';
   cdraw();

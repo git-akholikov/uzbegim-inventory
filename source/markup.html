@@ -221,7 +221,7 @@
     <div class="screen" id="s-stock">
       <div class="sticky">
         <input class="inp" id="stk-q" placeholder="Search name, SKU or brand">
-        <div class="frow"><select id="stk-cat"></select><select id="stk-brand"></select><select id="stk-status"></select></div>
+        <div class="frow frow-4"><select id="stk-cat"></select><select id="stk-brand"></select><select id="stk-product"></select><select id="stk-status"></select></div>
         <div class="catbar" id="stk-cats"></div>
         <div class="fcount" id="stk-count"></div>
       </div>
@@ -231,7 +231,7 @@
     <div class="screen" id="s-move">
       <div class="sticky">
         <div class="searchrow"><input class="inp" id="mv-q" placeholder="Search name, SKU or brand"><button class="scanbtn" onclick="openScan('mv')">Scan</button></div>
-        <div class="frow"><select id="mv-cat"></select><select id="mv-brand"></select><select id="mv-status"></select></div>
+        <div class="frow"><select id="mv-cat"></select><select id="mv-brand"></select><select id="mv-product"></select></div>
         <div class="catbar" id="mv-cats"></div>
         <div class="fcount" id="mv-count"></div>
       </div>
@@ -365,7 +365,7 @@
     <div class="screen" id="s-hist">
       <div class="sticky">
         <input class="inp" id="hs-q" placeholder="Search movement or destination">
-        <div class="frow frow-4"><select id="hs-type"></select><select id="hs-cust"></select><select id="hs-product"></select><select id="hs-brand"></select></div>
+        <div class="frow frow-4"><select id="hs-type"></select><select id="hs-cust"></select><select id="hs-brand"></select><select id="hs-product"></select></div>
         <div class="frow"><input type="date" id="hs-from"><input type="date" id="hs-to"></div>
         <select id="hs-view" style="display:none" aria-hidden="true"><option value="doc">List every movement</option></select>
         <div class="fcount" id="hs-count"></div>
