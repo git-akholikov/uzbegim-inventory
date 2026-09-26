@@ -570,8 +570,12 @@
 
     <div class="screen" id="s-settings">
       <div class="sechead">Google Sheets sync</div>
-      <div class="fg"><label class="lab">Your email</label><input class="ctrl" id="se2-staffemail" type="email" placeholder="you@example.com">
-        <div class="hint">This is the only thing a new phone needs — it already comes connected to the warehouse's Google Sheet.</div></div>
+      <div class="fg" id="se2-signedin" style="display:none">
+        <label class="lab">Your email</label>
+        <div class="signedin-box"><span class="signedin-name" id="se2-signedin-name"></span><span class="signedin-change" id="se2-changeemail">Not you? Tap to change</span></div>
+      </div>
+      <div class="fg" id="se2-emailedit"><label class="lab">Your email</label><input class="ctrl" id="se2-staffemail" type="email" placeholder="you@example.com">
+        <div class="hint">This is the only thing a new phone needs — it already comes connected to the warehouse's Google Sheet. Type it in and tap "Save &amp; sync now" below.</div></div>
       <div class="fg syncstatus" id="se2-syncstatus">Not synced yet</div>
       <div class="fg"><span class="hint" id="se2-advtoggle" style="cursor:pointer;text-decoration:underline">Change sync server&hellip;</span></div>
       <div class="fg" id="se2-adv" style="display:none"><label class="lab">Sheets web app link</label><input class="ctrl" id="se2-api" placeholder="https://script.google.com/macros/s/.../exec">

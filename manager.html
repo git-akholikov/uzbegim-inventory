@@ -49,6 +49,12 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .syncstatus.ok{color:#1f7a44;font-weight:700}
 .syncstatus.bad{color:#a83b34;font-weight:700}
 .syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3fb56d;flex:0 0 auto}
+/* "Signed in as ___" box in Settings once the typed email has been matched
+   against the Staff sheet — replaces the plain input so it isn't sitting
+   open for an easy accidental retype; "Tap to change" reopens it. */
+.signedin-box{background:#e2efee;border:1px solid #cfe6e4;border-radius:11px;padding:11px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.signedin-name{font-size:13px;font-weight:800;color:#0F5C5C}
+.signedin-change{font-size:10.5px;color:#6f6b64;font-weight:700;text-decoration:underline;cursor:pointer;white-space:nowrap;flex:0 0 auto}
 /* Big, always-visible sync banner under the header (every screen) — the
    answer to "I must know when it is not synced or not": green only when
    fully synced with nothing waiting, red with a plain reason otherwise. */
@@ -1122,8 +1128,12 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 
     <div class="screen" id="s-settings">
       <div class="sechead">Google Sheets sync</div>
-      <div class="fg"><label class="lab">Your email</label><input class="ctrl" id="se2-staffemail" type="email" placeholder="you@example.com">
-        <div class="hint">This is the only thing a new phone needs — it already comes connected to the warehouse's Google Sheet.</div></div>
+      <div class="fg" id="se2-signedin" style="display:none">
+        <label class="lab">Your email</label>
+        <div class="signedin-box"><span class="signedin-name" id="se2-signedin-name"></span><span class="signedin-change" id="se2-changeemail">Not you? Tap to change</span></div>
+      </div>
+      <div class="fg" id="se2-emailedit"><label class="lab">Your email</label><input class="ctrl" id="se2-staffemail" type="email" placeholder="you@example.com">
+        <div class="hint">This is the only thing a new phone needs — it already comes connected to the warehouse's Google Sheet. Type it in and tap "Save &amp; sync now" below.</div></div>
       <div class="fg syncstatus" id="se2-syncstatus">Not synced yet</div>
       <div class="fg"><span class="hint" id="se2-advtoggle" style="cursor:pointer;text-decoration:underline">Change sync server&hellip;</span></div>
       <div class="fg" id="se2-adv" style="display:none"><label class="lab">Sheets web app link</label><input class="ctrl" id="se2-api" placeholder="https://script.google.com/macros/s/.../exec">
@@ -1819,7 +1829,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='25', APP_UPDATED='Sep 26, 2026';
+var APP_VERSION='26', APP_UPDATED='Sep 26, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -2522,7 +2532,7 @@ function renderSettings(){
   document.getElementById('se2-email').value=SETTINGS.ownerEmail;
   document.getElementById('se2-when').value=SETTINGS.emailWhen;
   document.getElementById('se2-api').value=SHEETS_API_URL;
-  document.getElementById('se2-staffemail').value=SHEETS_STAFF_EMAIL;
+  updateStaffEmailUI();
   // Warehouse letterhead / owner-notification prefs are business-wide, not
   // per-person -- a worker signing in for the first time has no reason to
   // see or touch them (they already come with sensible built-in defaults),
@@ -2598,6 +2608,48 @@ function saveSyncFields(){
   try{localStorage.setItem('uzb_api_url',SHEETS_API_URL);localStorage.setItem('uzb_staff_email',SHEETS_STAFF_EMAIL);}catch(e){}
   ME.email=SHEETS_STAFF_EMAIL;
 }
+// Is this email an active row in the Staff sheet? STAFF only ever holds
+// active rows to begin with (the backend already drops inactive ones), so
+// finding it here at all means it's a real, currently-active staff member.
+function findStaffByEmail(email){
+  var em=(email||'').trim().toLowerCase();
+  if(!em)return null;
+  for(var i=0;i<STAFF.length;i++){
+    if((STAFF[i].email||'').trim().toLowerCase()===em)return STAFF[i];
+  }
+  return null;
+}
+// Swaps the Settings "Your email" field between the open input (nothing
+// confirmed yet) and a locked "Signed in as ___" box (the saved email
+// matched a real active staff row) -- see se2-syncnow's click handler for
+// where the match actually happens.
+function updateStaffEmailUI(){
+  var box=document.getElementById('se2-signedin'), edit=document.getElementById('se2-emailedit'),
+      nameEl=document.getElementById('se2-signedin-name'), input=document.getElementById('se2-staffemail');
+  if(!box||!edit||!nameEl||!input)return;
+  var matched=SHEETS_STAFF_EMAIL?findStaffByEmail(SHEETS_STAFF_EMAIL):null;
+  if(matched){
+    nameEl.textContent=matched.name;
+    box.style.display='';
+    edit.style.display='none';
+  } else {
+    input.value=SHEETS_STAFF_EMAIL||'';
+    box.style.display='none';
+    edit.style.display='';
+  }
+}
+(function(){
+  var link=document.getElementById('se2-changeemail');
+  if(!link)return;
+  link.addEventListener('click',function(){
+    document.getElementById('se2-signedin').style.display='none';
+    var edit=document.getElementById('se2-emailedit');
+    edit.style.display='';
+    var input=document.getElementById('se2-staffemail');
+    input.value='';
+    input.focus();
+  });
+})();
 document.getElementById('se2-save').addEventListener('click',function(){
   SETTINGS.bizName=document.getElementById('se2-name').value.trim();
   SETTINGS.line1=document.getElementById('se2-line1').value.trim();
@@ -2615,13 +2667,30 @@ document.getElementById('se2-save').addEventListener('click',function(){
   go('menu');
 });
 document.getElementById('se2-syncnow').addEventListener('click',function(){
+  var prevEmail=SHEETS_STAFF_EMAIL;
   saveSyncFields();
   if(!sheetsConfigured()){toast('Add the Sheets link first','bad');return;}
-  toast('Syncing…');
+  toast(SHEETS_STAFF_EMAIL?'Checking…':'Syncing…');
   queueRetryAll(function(){
     syncFromServer(function(ok,err){
       drawSyncStatus();
-      toast(ok?'Synced with Google Sheets':('Sync failed: '+err),ok?'ok':'bad');
+      if(!ok){
+        toast('Sync failed: '+err,'bad');
+        return;
+      }
+      // A typed email that isn't a real, active row in the Staff sheet
+      // doesn't get to quietly start syncing as "nobody in particular" --
+      // put the previous (or blank) email back and say why.
+      var matched=findStaffByEmail(SHEETS_STAFF_EMAIL);
+      if(SHEETS_STAFF_EMAIL&&!matched){
+        SHEETS_STAFF_EMAIL=prevEmail;
+        try{localStorage.setItem('uzb_staff_email',SHEETS_STAFF_EMAIL);}catch(e){}
+        ME.email=SHEETS_STAFF_EMAIL;
+        toast("That email isn't on the staff list — ask your manager to add you first",'bad');
+        return;
+      }
+      updateStaffEmailUI();
+      toast(matched?('Welcome, '+matched.name+'!'):'Synced with Google Sheets','ok');
     });
   });
 });

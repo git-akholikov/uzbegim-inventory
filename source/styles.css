@@ -26,6 +26,12 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
 .syncstatus.ok{color:#1f7a44;font-weight:700}
 .syncstatus.bad{color:#a83b34;font-weight:700}
 .syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3fb56d;flex:0 0 auto}
+/* "Signed in as ___" box in Settings once the typed email has been matched
+   against the Staff sheet — replaces the plain input so it isn't sitting
+   open for an easy accidental retype; "Tap to change" reopens it. */
+.signedin-box{background:#e2efee;border:1px solid #cfe6e4;border-radius:11px;padding:11px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.signedin-name{font-size:13px;font-weight:800;color:#0F5C5C}
+.signedin-change{font-size:10.5px;color:#6f6b64;font-weight:700;text-decoration:underline;cursor:pointer;white-space:nowrap;flex:0 0 auto}
 /* Big, always-visible sync banner under the header (every screen) — the
    answer to "I must know when it is not synced or not": green only when
    fully synced with nothing waiting, red with a plain reason otherwise. */
