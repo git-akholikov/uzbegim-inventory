@@ -48,6 +48,7 @@ def build_base_html():
 def variant(html, title, manifest, icon192, icon512, iconMaskable, appleTouch):
     out = html
     out = out.replace('<title>Uzbegim Warehouse</title>', '<title>' + title + '</title>')
+    out = out.replace('content="Uzbegim Warehouse"', 'content="' + title + '"')
     out = out.replace('href="manifest.json"', 'href="' + manifest + '"')
     out = out.replace('href="icon-192.png"', 'href="' + icon192 + '"')
     out = out.replace('href="apple-touch-icon.png"', 'href="' + appleTouch + '"')

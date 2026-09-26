@@ -6,6 +6,16 @@
 <title>Uzbegim Warehouse</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0F5C5C">
+<!-- Without apple-mobile-web-app-capable, "Add to Home Screen" on iPhone
+     doesn't actually open a standalone app window -- it opens the page
+     inside Safari itself, complete with Safari's own translucent/blurred
+     toolbar sitting on top of the page ("the top side is kinda blurry"
+     when opened as an app). These three lines are what make iOS treat it
+     as a real installed app with its own plain title bar instead. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Uzbegim Warehouse">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
