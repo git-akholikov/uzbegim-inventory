@@ -620,7 +620,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='29', APP_UPDATED='Sep 26, 2026';
+var APP_VERSION='30', APP_UPDATED='Sep 30, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -2900,5 +2900,20 @@ document.addEventListener('keydown',function(e){
 setupFilters('stk');setupFilters('mv');
 wireCatBar('stk',renderStock);wireCatBar('mv',renderMove);
 kpis();drawBasket();
-if(sheetsConfigured())syncFromServer(function(ok,err){if(ok)kpis();else toast('Sheets sync failed — showing last-known stock','bad');});
+// Boot sync: pulls fresh Sheets data the moment the app opens, instead of
+// making the person tap the header refresh button every time. Refreshes
+// whatever screen is actually showing (refreshCurrentScreen(), not just
+// kpis()) since by the time this resolves the person may already have
+// navigated off the Menu screen. Either way it settles -- success, failure,
+// or Sheets not even configured yet -- it fires 'uzb:boot-synced' so the
+// splash screen (markup.html) knows the first sync attempt is done and can
+// stop waiting on it.
+if(sheetsConfigured()){
+  syncFromServer(function(ok,err){
+    if(ok)refreshCurrentScreen();else toast('Sheets sync failed — showing last-known stock','bad');
+    document.dispatchEvent(new Event('uzb:boot-synced'));
+  });
+}else{
+  document.dispatchEvent(new Event('uzb:boot-synced'));
+}
 startPolling();

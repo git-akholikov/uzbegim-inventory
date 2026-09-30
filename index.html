@@ -648,10 +648,31 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
     var sub=document.getElementById('spl-sub');
     if(sub)sub.textContent='Manager';
   }
-  setTimeout(function(){
+  // The splash used to just be a fixed 1.3s timer, unrelated to whether the
+  // app actually had fresh data yet -- it could disappear before the very
+  // first Google Sheets sync (fired later, at the bottom of app.js) had
+  // finished, landing the person on a screen full of stale numbers with no
+  // visual cue that a sync was still owed. Now the splash waits for app.js
+  // to announce the first sync attempt is done (event 'uzb:boot-synced',
+  // dispatched whether it succeeded, failed, or Sheets isn't set up at all
+  // -- any of those means "this is the freshest data we're going to get
+  // right now"). MIN_MS keeps the branded animation from flashing by too
+  // fast on a quick local sync; MAX_MS is a hard safety net so a slow or
+  // hung connection (or any JS error before app.js gets there) can never
+  // leave someone stuck looking at the splash.
+  var MIN_MS=1000, MAX_MS=4500, start=Date.now(), exited=false;
+  function doExit(){
+    if(exited)return;
+    exited=true;
     el.className+=' spl-exit';
     setTimeout(function(){ el.style.display='none'; },520);
-  },1300);
+  }
+  function trySynced(){
+    var left=MIN_MS-(Date.now()-start);
+    if(left>0){setTimeout(doExit,left);}else{doExit();}
+  }
+  document.addEventListener('uzb:boot-synced',trySynced);
+  setTimeout(doExit,MAX_MS);
 })();
 </script>
 <div class="phone">
@@ -1839,7 +1860,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='29', APP_UPDATED='Sep 26, 2026';
+var APP_VERSION='30', APP_UPDATED='Sep 30, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -4119,7 +4140,22 @@ document.addEventListener('keydown',function(e){
 setupFilters('stk');setupFilters('mv');
 wireCatBar('stk',renderStock);wireCatBar('mv',renderMove);
 kpis();drawBasket();
-if(sheetsConfigured())syncFromServer(function(ok,err){if(ok)kpis();else toast('Sheets sync failed — showing last-known stock','bad');});
+// Boot sync: pulls fresh Sheets data the moment the app opens, instead of
+// making the person tap the header refresh button every time. Refreshes
+// whatever screen is actually showing (refreshCurrentScreen(), not just
+// kpis()) since by the time this resolves the person may already have
+// navigated off the Menu screen. Either way it settles -- success, failure,
+// or Sheets not even configured yet -- it fires 'uzb:boot-synced' so the
+// splash screen (markup.html) knows the first sync attempt is done and can
+// stop waiting on it.
+if(sheetsConfigured()){
+  syncFromServer(function(ok,err){
+    if(ok)refreshCurrentScreen();else toast('Sheets sync failed — showing last-known stock','bad');
+    document.dispatchEvent(new Event('uzb:boot-synced'));
+  });
+}else{
+  document.dispatchEvent(new Event('uzb:boot-synced'));
+}
 startPolling();
 
 </script>
