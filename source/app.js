@@ -620,7 +620,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='30', APP_UPDATED='Sep 30, 2026';
+var APP_VERSION='31', APP_UPDATED='Sep 30, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -2471,13 +2471,35 @@ function detail(id){
   '<div class="drow"><span>Entered by</span><span>'+h.who+'</span></div>'+
   '<div class="drow"><span>Direction</span><span>'+dirLabel+'</span></div>'+
   '<div class="drow"><span>Products</span><span>'+h.lines.length+'</span></div>'+
+  '<div class="drow"><span>Boxes</span><span>'+bx+'</span></div>'+
   (h.ref?'<div class="drow"><span>Reference</span><span>'+h.ref+'</span></div>':'')+
   (h.notes?'<div class="drow"><span>Notes</span><span>'+h.notes+'</span></div>':'')+
-  '<div class="sechead">Lines</div>';
-  for(var k=0;k<h.lines.length;k++){var l=h.lines[k];
-    html+='<div class="card" style="margin-bottom:6px"><div class="c-info"><div class="c-name">'+l.name+'</div>'+
-    '<div class="c-meta">'+l.sku+' &middot; '+l.upb+' units/box &middot; '+(l.boxes*l.upb)+' units total</div>'+
-    '</div><div class="c-box">'+l.boxes+'<small>BOXES</small></div></div>';}
+  '<div class="sechead">Lines &mdash; by category</div>';
+  // Group this movement's lines by category (the product's real category
+  // when it's still a known SKU, falling back to whatever category was
+  // frozen onto the line itself, then "Other") and list the groups plain
+  // alphabetically -- nothing pinned to the top. #dt-body .card/.cathead
+  // in styles.css make these rows shorter than a normal product list so
+  // a long movement fits more on screen before you have to scroll.
+  var byCat={};
+  for(var m=0;m<h.lines.length;m++){
+    var ln=h.lines[m], lp=prod(ln.sku), cat=(lp&&lp.cat)||ln.cat||'Other';
+    (byCat[cat]=byCat[cat]||[]).push(ln);
+  }
+  Object.keys(byCat).sort().forEach(function(cat){
+    var group=byCat[cat], gbx=0;
+    group.forEach(function(l){gbx+=l.boxes;});
+    var c=catIcon(cat);
+    html+='<div class="cathead" style="background:'+c[1]+'">'+icoCat(cat,'sm')+
+      '<div class="cathead-name" style="color:'+c[2]+'">'+cat+'</div>'+
+      '<div class="cathead-meta" style="color:'+c[2]+'">'+group.length+' item'+(group.length===1?'':'s')+' &middot; '+gbx+' box'+(gbx===1?'':'es')+'</div>'+
+    '</div>';
+    group.forEach(function(l){
+      html+='<div class="card"><div class="c-info"><div class="c-name">'+l.name+'</div>'+
+      '<div class="c-meta">'+l.sku+' &middot; '+l.upb+' units/box &middot; '+(l.boxes*l.upb)+' units total</div>'+
+      '</div><div class="c-box">'+l.boxes+'<small>BOXES</small></div></div>';
+    });
+  });
   html+='<div class="total" style="margin-top:10px">'+bx+' boxes  |  '+un+' units</div>';
   if(canVoid(h))html+='<button class="btn btn-danger" style="margin-top:14px" onclick="confirmVoid(\''+h.id+'\')">Void this movement</button>';
   document.getElementById('dt-body').innerHTML=html;go('detail');
