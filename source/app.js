@@ -620,7 +620,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='31', APP_UPDATED='Sep 30, 2026';
+var APP_VERSION='32', APP_UPDATED='Sep 30, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -1472,9 +1472,24 @@ document.getElementById('se2-syncnow').addEventListener('click',function(){
   var prevEmail=SHEETS_STAFF_EMAIL;
   saveSyncFields();
   if(!sheetsConfigured()){toast('Add the Sheets link first','bad');return;}
-  toast(SHEETS_STAFF_EMAIL?'Checking…':'Syncing…');
+  // The toast this used to show ("Checking…"/"Syncing…") auto-hides after
+  // 2.6s (see toast()) no matter how long the actual request takes -- and
+  // on a cold Google Apps Script instance (the warehouse Sheet going a few
+  // minutes without a request) a sync can easily take longer than that.
+  // The toast would vanish, the screen would look completely idle, and the
+  // person had no way to tell "still working" from "silently failed" --
+  // which is exactly what got reported as sync "not working" for a worker
+  // even though it was most likely just slow. Now the button disables
+  // itself and the status line below it stays showing "Syncing…" for the
+  // whole real duration of the request, however long that turns out to be.
+  var btn=this,origLabel=btn.textContent;
+  btn.disabled=true;btn.textContent='Syncing…';
+  var statusEl=document.getElementById('se2-syncstatus');
+  if(statusEl){statusEl.textContent='Syncing — can take up to 30 seconds right after the Sheet has been idle a while';statusEl.className='fg syncstatus';}
+  function restoreButton(){btn.disabled=false;btn.textContent=origLabel;}
   queueRetryAll(function(){
     syncFromServer(function(ok,err){
+      restoreButton();
       drawSyncStatus();
       if(!ok){
         toast('Sync failed: '+err,'bad');
