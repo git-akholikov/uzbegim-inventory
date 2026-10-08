@@ -527,7 +527,6 @@ body{display:flex;justify-content:center;align-items:stretch;padding:0;overflow:
   #pd-list .c-name{grid-column:1;grid-row:1}
   #pd-list .c-meta:nth-child(2){grid-column:1;grid-row:2}
   #pd-list .c-meta:nth-child(n+3){grid-column:2;grid-row:auto;margin-top:0}
-  #cu-list .party,#sup-list .party{min-height:86px}
   #pr-list .price-row{
     display:grid !important;align-items:center !important;gap:14px !important;
     min-height:72px;padding:9px 14px !important;border-radius:8px !important;
@@ -1905,7 +1904,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='33', APP_UPDATED='Sep 30, 2026';
+var APP_VERSION='34', APP_UPDATED='Oct 8, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -3198,14 +3197,13 @@ function partyStats(name,isSup){
   return {moves:moves,boxes:boxes,rev:rev,cost:cost,last:last};
 }
 function partyCard(o,i,isSup){
+  // Shortened on purpose: just the name and its movement activity -- contact
+  // person/phone/email/address/notes used to always print here too, which
+  // made this list several times taller than it needed to be for someone
+  // just scanning names. That full detail is one tap away (openCust/openSup
+  // already show every field on the edit screen); nothing here is deleted,
+  // only not repeated in the list.
   var st=partyStats(o.name,isSup);
-  var addr=fullAddr(o);
-  var rows='';
-  rows+='<i>&#128100;</i><span'+(o.contact?'':' class="cx-miss"')+'>'+(o.contact||'no contact person')+'</span>';
-  rows+='<i>&#128222;</i><span'+(o.phone?'':' class="cx-miss"')+'>'+(o.phone||'no phone')+'</span>';
-  if(o.email)rows+='<i>&#9993;</i><span>'+o.email+'</span>';
-  rows+='<i>&#128205;</i><span'+(addr?'':' class="cx-miss"')+'>'+(addr||'no address')+'</span>';
-  if(o.notes)rows+='<i>&#128221;</i><span>'+o.notes+'</span>';
   var tag=isSup?'<span class="h-tag t-receipt">SUPPLIER</span>'
     :'<span class="h-tag t-transfer">DESTINATION</span>';
   var stats='<div class="cx-stats">'+
@@ -3218,7 +3216,7 @@ function partyCard(o,i,isSup){
     '<div class="cx"><div class="cx-top" style="align-items:center">'+
     icoParty(o.name,isSup?'supplier':(o.kind==='invoice'?'invoice':'transfer'))+
     '<div class="cx-name" style="flex:1">'+o.name+'</div>'+tag+'</div>'+
-    '<div class="cx-rows">'+rows+'</div>'+stats+'</div></div>';
+    stats+'</div></div>';
 }
 function renderCusts(){
   var q=(document.getElementById('cu-q').value||'').toLowerCase().trim();

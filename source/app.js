@@ -327,12 +327,28 @@ function postMovements(type,lines,extra,cb,onSettle){
   function attempt(retryCb){
     if(!sheetsConfigured()){if(retryCb)retryCb(false,'not configured');return;}
     if(!SHEETS_STAFF_EMAIL){if(retryCb)retryCb(false,'no staff email');return;}
+    // The backend rejects a write outright (403 "Unknown or inactive staff
+    // email") when the caller's email isn't an active row on the Staff
+    // sheet -- unlike a plain sync (GET), which lets any email through and
+    // just treats it as a non-manager. That used to fall through to the
+    // generic "Sheets sync failed — will keep retrying" toast below and
+    // queue forever, retrying on every poll/sync with no way to ever
+    // succeed until someone fixed the Staff sheet -- which reads exactly
+    // like "sync is broken" for whichever person's email isn't registered
+    // right, while everyone whose email IS registered never sees this at
+    // all. Catching it here, against this device's own last-synced Staff
+    // list, says so plainly up front instead of masquerading as a network
+    // problem -- and still queues the attempt, so it goes through on its
+    // own the moment a manager adds/fixes that email and this device syncs
+    // again.
+    if(!findStaffByEmail(SHEETS_STAFF_EMAIL)){if(retryCb)retryCb(false,'email not recognized');return;}
     doPostMovements(movements,retryCb);
   }
   attempt(function(ok,err){
     if(!ok){
       if(err==='not configured')toast('Not saved to Sheets — add the Sheets link in Settings','bad');
       else if(err==='no staff email')toast('Not saved to Sheets yet — add your email in Settings','bad');
+      else if(err==='email not recognized')toast("Not saved — your email isn't on the active staff list. Ask your manager to add you in Settings, then it'll save on its own",'bad');
       else toast('Sheets sync failed — will keep retrying','bad');
       queuePush(label,attempt,onSettle);
     }
@@ -364,12 +380,18 @@ function postAction(action,key,payload,applyFn,cb,label,onSettle){
   function attempt(retryCb){
     if(!sheetsConfigured()){if(retryCb)retryCb(false,'not configured');return;}
     if(!SHEETS_STAFF_EMAIL){if(retryCb)retryCb(false,'no staff email');return;}
+    // See the matching comment in postMovements() above: a write is
+    // rejected outright when the caller's email isn't an active Staff row,
+    // so check that locally first and say so plainly instead of queuing
+    // forever under a generic "will keep retrying" message.
+    if(!findStaffByEmail(SHEETS_STAFF_EMAIL)){if(retryCb)retryCb(false,'email not recognized');return;}
     doPostAction(action,key,payload,applyFn,retryCb);
   }
   attempt(function(ok,err,res){
     if(!ok){
       if(err==='not configured')toast('Not saved to Sheets — add the Sheets link in Settings','bad');
       else if(err==='no staff email')toast('Not saved to Sheets yet — add your email in Settings','bad');
+      else if(err==='email not recognized')toast("Not saved — your email isn't on the active staff list. Ask your manager to add you in Settings, then it'll save on its own",'bad');
       else toast('Sheets sync failed — will keep retrying','bad');
       queuePush(label||action,attempt,onSettle);
     }
@@ -620,7 +642,7 @@ for(var i=0;i<mb.length;i++)mb[i].addEventListener('click',function(){
 /* Bump these together every time a change ships, alongside sw.js's
    CACHE_NAME -- shown at the bottom of the menu and in Settings so it's
    obvious at a glance whether a phone is on the latest build. */
-var APP_VERSION='32', APP_UPDATED='Sep 30, 2026';
+var APP_VERSION='34', APP_UPDATED='Oct 8, 2026';
 function appVersionLine(){return 'v'+APP_VERSION+' &middot; updated '+APP_UPDATED;}
 function drawAppVersion(){
   var f=document.getElementById('menufoot');
@@ -1382,7 +1404,15 @@ function drawSyncStatus(){
     el.textContent='Not synced yet — add the Sheets link above';
     el.className='fg syncstatus';
   } else if(SYNC_QUEUE.length){
-    el.textContent=SYNC_QUEUE.length+' change'+(SYNC_QUEUE.length===1?'':'s')+' waiting to reach Sheets';
+    // A stuck queue usually just means "still retrying" -- but if this
+    // device's own email isn't an active Staff row, no amount of retrying
+    // will ever clear it, so say that instead of the generic count (see
+    // the "email not recognized" branch in postMovements/postAction).
+    if(SHEETS_STAFF_EMAIL&&!findStaffByEmail(SHEETS_STAFF_EMAIL)){
+      el.textContent="Not saving — your email isn't on the active staff list. Ask your manager to add you";
+    } else {
+      el.textContent=SYNC_QUEUE.length+' change'+(SYNC_QUEUE.length===1?'':'s')+' waiting to reach Sheets';
+    }
     el.className='fg syncstatus bad';
   } else if(lastSyncOk){
     el.innerHTML='<span class="syncdot"></span> Synced with Google Sheets';
@@ -1905,14 +1935,13 @@ function partyStats(name,isSup){
   return {moves:moves,boxes:boxes,rev:rev,cost:cost,last:last};
 }
 function partyCard(o,i,isSup){
+  // Shortened on purpose: just the name and its movement activity -- contact
+  // person/phone/email/address/notes used to always print here too, which
+  // made this list several times taller than it needed to be for someone
+  // just scanning names. That full detail is one tap away (openCust/openSup
+  // already show every field on the edit screen); nothing here is deleted,
+  // only not repeated in the list.
   var st=partyStats(o.name,isSup);
-  var addr=fullAddr(o);
-  var rows='';
-  rows+='<i>&#128100;</i><span'+(o.contact?'':' class="cx-miss"')+'>'+(o.contact||'no contact person')+'</span>';
-  rows+='<i>&#128222;</i><span'+(o.phone?'':' class="cx-miss"')+'>'+(o.phone||'no phone')+'</span>';
-  if(o.email)rows+='<i>&#9993;</i><span>'+o.email+'</span>';
-  rows+='<i>&#128205;</i><span'+(addr?'':' class="cx-miss"')+'>'+(addr||'no address')+'</span>';
-  if(o.notes)rows+='<i>&#128221;</i><span>'+o.notes+'</span>';
   var tag=isSup?'<span class="h-tag t-receipt">SUPPLIER</span>'
     :'<span class="h-tag t-transfer">DESTINATION</span>';
   var stats='<div class="cx-stats">'+
@@ -1925,7 +1954,7 @@ function partyCard(o,i,isSup){
     '<div class="cx"><div class="cx-top" style="align-items:center">'+
     icoParty(o.name,isSup?'supplier':(o.kind==='invoice'?'invoice':'transfer'))+
     '<div class="cx-name" style="flex:1">'+o.name+'</div>'+tag+'</div>'+
-    '<div class="cx-rows">'+rows+'</div>'+stats+'</div></div>';
+    stats+'</div></div>';
 }
 function renderCusts(){
   var q=(document.getElementById('cu-q').value||'').toLowerCase().trim();
